@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  api-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-monitor
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: ./data/api-monitor.db
+      LOG_LEVEL: info
+      DEFAULT_INTERVAL_SECONDS: 60
+      DEFAULT_TIMEOUT_MS: 5000
+      DEFAULT_FAILURE_THRESHOLD: 3
+      RETRY_COUNT: 3
+      RETRY_BASE_DELAY_MS: 250
+      RETRY_FACTOR: 2
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

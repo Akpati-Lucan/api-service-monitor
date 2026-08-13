@@ -1,245 +1,253 @@
-# API Reliability & Incident Monitoring Service
+# API Reliability & Incident Monitoring Service — Design Document
 
-A lightweight self-hosted service for monitoring API health, recording check results in SQLite, and surfacing a small REST API for service lifecycle and health checks. This project is intentionally scoped to a clear engineering foundation: TypeScript, Express, SQLite, structured logging, validation, Dockerized deployment, and testable runtime boundaries.
+**Version:** 1.0
+**Author:** [Your name]
+**Status:** Draft for review
+**Last updated:** 2026-08-13
 
-## Problem it addresses
+---
 
-Small engineering teams often need visibility into whether critical APIs are healthy without bringing up a large SaaS or a microservice platform. This service provides a narrow, self-hosted monitoring foundation for:
+## 1. Overview
 
-- discovering whether a service is currently reachable
-- recording response time and failure patterns
-- storing service configuration and health history
-- exposing a simple REST API for operational inspection
-- running in a single container with SQLite and minimal operational complexity
+### 1.1 Problem statement
 
-## Architecture
+Small teams running multiple internal or external APIs rarely have visibility into their health until a customer complains. They need a lightweight, self-hosted service that:
 
-```mermaid
-flowchart LR
-    A[Express routes] --> B[Application logic]
-    B --> C[Monitor lifecycle]
-    B --> D[Database layer]
-    C --> E[Checker + timeout]
-    E --> F[Retry utility]
-    D --> G[SQLite]
+- Periodically checks whether registered endpoints are up
+- Tracks response time and error rates over time
+- Detects and records incidents (sustained outages) automatically
+- Exposes this data through a simple REST API
+
+### 1.2 Goals
+
+- Register and manage a list of monitored services (URLs)
+- Poll each service on a configurable interval
+- Persist health check results with enough history to compute uptime and metrics
+- Detect incidents (N consecutive failures → DOWN) and auto-resolve them on recovery
+- Be resilient itself: retries, timeouts, graceful shutdown, structured logs
+- Be trivially runnable via Docker Compose
+- Be well-tested at the unit and integration level
+
+### 1.3 Non-goals (v1)
+
+- Multi-tenant auth / user accounts (single-operator tool for v1; see §10)
+- Alerting integrations (Slack/PagerDuty/email) — stubbed as an interface, not required to ship
+- Distributed/multi-node scheduling — single-process scheduler is sufficient at this scale
+- A frontend UI — API-only for v1
+
+---
+
+## 2. High-Level Architecture
+
+```
+                        ┌─────────────────────────┐
+                        │        HTTP API          │
+                        │   (Express / Fastify)    │
+                        └────────────┬─────────────┘
+                                     │
+                 ┌───────────────────┼───────────────────┐
+                 │                   │                   │
+        ┌────────▼───────┐ ┌─────────▼────────┐ ┌────────▼────────┐
+        │  services.ts     │ │   health.ts       │ │  incidents.ts    │
+        │  (CRUD routes)   │ │  (liveness route) │ │  (nested routes) │
+        └────────┬─────────┘ └───────────────────┘ └────────┬─────────┘
+                 │                                          │
+                 │              ┌───────────────────────────┘
+                 ▼              ▼
+        ┌─────────────────────────────────┐
+        │           monitor.ts             │   Scheduler: owns setInterval
+        │  (orchestrates checks, owns      │   per service, applies backoff,
+        │   scheduling & lifecycle)        │   feeds results to incident logic
+        └────────────┬─────────────────────┘
+                      │
+             ┌────────▼────────┐
+             │   checker.ts     │   Single responsibility: perform one
+             │  (HTTP probe +   │   HTTP check with timeout + retry
+             │   retry/timeout) │
+             └────────┬────────┘
+                      │
+             ┌────────▼────────┐
+             │   database.ts    │   SQLite (v1) via better-sqlite3 or
+             │  (persistence)   │   Prisma; swappable for Postgres later
+             └─────────────────┘
 ```
 
-The project keeps the boundary intentionally simple:
+**Process model:** a single Node.js process runs both the HTTP API and the in-memory scheduler. This keeps deployment trivial (one container, no external queue) while still being architecturally honest about where the boundaries are, so it could be split into an API service + worker service later without a rewrite.
 
-- HTTP routes validate input and manage service registration
-- the database layer owns SQLite schema, inserts, and reads
-- the monitor defines lifecycle behavior for scheduled checks
-- the checker performs a single HTTP probe with timeout
-- the retry utility handles generic exponential backoff without knowing HTTP semantics
+---
 
-## Tech stack
+## 3. Tech Stack
 
-- TypeScript
-- Node.js 18+
-- Express
-- SQLite via better-sqlite3
-- Zod for validation
-- Pino for structured JSON logs
-- Vitest + Supertest for automated tests
-- Docker and Docker Compose for local deployment
+| Concern | Choice | Why |
+|---|---|---|
+| Language | TypeScript | Type safety across DB rows, API payloads, and internal events |
+| HTTP framework | Express (or Fastify) | Minimal, well understood, easy to explain in an interview |
+| Database | SQLite (`better-sqlite3`) | Zero external dependencies for local/demo use; synchronous API simplifies the scheduler code |
+| ORM/Query layer | Raw SQL + a thin migration runner, or Prisma | Raw SQL keeps the "what's actually happening" story clear for a systems-focused interview |
+| Validation | `zod` | Runtime validation of request bodies and env config from a single schema |
+| HTTP client (for checks) | native `fetch` (Node 18+) with `AbortController` | No extra dependency needed for timeouts |
+| Logging | `pino` (or a small custom JSON logger) | Structured JSON logs by default |
+| Testing | `vitest` or `jest` + `supertest` | Fast unit tests, HTTP-level integration tests |
+| Containerization | Docker + docker-compose | One-command run |
 
-## Project structure
+---
 
-```text
-api-monitor/
-├── src/
-│   ├── app.ts
-│   ├── config.ts
-│   ├── server.ts
-│   ├── db/
-│   │   ├── database.ts
-│   │   └── migrations.ts
-│   ├── routes/
-│   │   ├── health.ts
-│   │   └── services.ts
-│   ├── services/
-│   │   ├── alert.ts
-│   │   ├── checker.ts
-│   │   └── monitor.ts
-│   ├── types/
-│   │   └── index.ts
-│   └── utils/
-│       ├── errors.ts
-│       ├── logger.ts
-│       └── retry.ts
-├── tests/
-│   ├── api.test.ts
-│   ├── checker.test.ts
-│   ├── config.test.ts
-│   ├── database.test.ts
-│   └── retry.test.ts
-├── data/
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-├── tsconfig.json
-├── vitest.config.ts
-├── README.md
-└── .
-```
+## 4. Data Model
 
-## Local development
+### 4.1 Entities
 
-1. Install dependencies:
+**Service**
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT (uuid) | PK |
+| name | TEXT | required |
+| url | TEXT | required, validated as URL |
+| interval_seconds | INTEGER | default 60 |
+| timeout_ms | INTEGER | default 5000 |
+| failure_threshold | INTEGER | default 3 (consecutive failures → incident) |
+| created_at | DATETIME | |
+| is_active | BOOLEAN | soft-disable without deleting history |
 
-   ```bash
-   npm install
-   ```
+**HealthCheck** (append-only log; one row per probe attempt's *final* outcome, after retries)
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER | PK, autoincrement |
+| service_id | TEXT | FK → Service |
+| status | TEXT | `UP` \| `DOWN` |
+| http_status | INTEGER \| NULL | null on network error/timeout |
+| response_time_ms | INTEGER \| NULL | |
+| error | TEXT \| NULL | e.g. `"timeout"`, `"ECONNREFUSED"` |
+| checked_at | DATETIME | |
 
-2. Copy the example environment and adjust it if needed:
+**Incident**
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT (uuid) | PK |
+| service_id | TEXT | FK → Service |
+| started_at | DATETIME | timestamp of the check that crossed the failure threshold |
+| resolved_at | DATETIME \| NULL | null while ongoing |
+| reason | TEXT | e.g. `"HTTP 503"`, `"timeout"` |
+| duration_seconds | INTEGER \| NULL | computed on resolution |
 
-   ```bash
-   cp .env.example .env
-   ```
+### 4.2 Indexes
 
-3. Start the dev server:
+- `HealthCheck(service_id, checked_at)` — for time-range metric queries and uptime calculation
+- `Incident(service_id, resolved_at)` — to quickly find the *open* incident for a service (`resolved_at IS NULL`)
 
-   ```bash
-   npm run dev
-   ```
+### 4.3 Derived metrics (computed, not stored)
 
-4. The service listens on the configured port, defaulting to 3000.
+- **Uptime %** over a window = `UP checks / total checks` in that window (or duration-weighted, see §7.3)
+- **Average response time** over a window
+- **Current status** = status of the most recent HealthCheck row
 
-## Running tests
+---
 
-```bash	npm test
-```
+## 5. API Design
 
-## Building the TypeScript app
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/services` | Register a new service |
+| `GET` | `/services` | List all services with current status summary |
+| `GET` | `/services/:id` | Get one service's detail |
+| `DELETE` | `/services/:id` | Remove a service (and stop monitoring it) |
+| `GET` | `/services/:id/incidents` | List incidents for a service |
+| `GET` | `/services/:id/metrics` | Uptime %, avg response time, check count, over a time window |
+| `GET` | `/health` | Liveness/readiness of the monitor service itself |
 
-```bash
-npm run build
-```
-
-## Running with Docker
-
-```bash
-docker compose up --build
-```
-
-This starts the service and mounts the local data directory so the SQLite file persists across container restarts.
-
-## API endpoints
-
-### GET /health
-
-Returns service liveness and database connectivity.
-
-Example response:
-
-```json
-{
-  "status": "healthy",
-  "database": "connected",
-  "monitor": "running",
-  "activeServices": 0
-}
-```
-
-### POST /services
-
-Create a monitored service.
+### 5.1 `POST /services`
 
 Request:
-
 ```json
 {
-  "name": "Payments API",
+  "name": "Payment API",
   "url": "https://example.com/health",
   "intervalSeconds": 30,
   "timeoutMs": 5000,
   "failureThreshold": 3
 }
 ```
+Validation (via zod): `name` non-empty; `url` must parse as a valid absolute URL; numeric fields must be positive integers with sane bounds (e.g. `intervalSeconds >= 5`). Invalid input → `400` with a field-level error list.
 
-### GET /services
+Response `201`:
+```json
+{
+  "id": "b1e3...",
+  "name": "Payment API",
+  "url": "https://example.com/health",
+  "intervalSeconds": 30,
+  "timeoutMs": 5000,
+  "failureThreshold": 3,
+  "isActive": true,
+  "createdAt": "2026-08-13T13:40:00Z"
+}
+```
+Side effect: the scheduler immediately registers a polling job for this service (see §7.1) and runs the first check right away rather than waiting a full interval.
 
-List all active services.
+### 5.2 `GET /services`
 
-### GET /services/:id
-
-Fetch a single service by id.
-
-### DELETE /services/:id
-
-Deactivate a service and return 204.
-
-### GET /services/:id/incidents
-
-List incidents associated with the service.
-
-### GET /services/:id/metrics
-
-Placeholder metrics response for the next implementation phase.
-
-## Example API calls
-
-```bash
-curl -X POST http://localhost:3000/services \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "Payments API",
-    "url": "https://example.com/health",
-    "intervalSeconds": 30,
-    "timeoutMs": 5000,
-    "failureThreshold": 3
-  }'
-
-curl http://localhost:3000/services
-curl http://localhost:3000/health
+Response `200`:
+```json
+[
+  {
+    "id": "b1e3...",
+    "name": "Payment API",
+    "status": "UP",
+    "lastCheckedAt": "2026-08-13T14:03:21Z",
+    "responseTimeMs": 142,
+    "uptime24h": 99.91
+  }
+]
 ```
 
-## Current implementation status
+### 5.3 `GET /services/:id`
 
-This phase establishes the engineering foundation and includes:
+Same shape as one list item, plus config fields (`url`, `intervalSeconds`, etc). `404` if not found.
 
-- TypeScript project setup and config validation
-- Express API with health and service endpoints
-- SQLite database initialization and migrations
-- typed domain model and basic application errors
-- structured JSON logging with pino
-- retry helper with exponential backoff
-- checker skeleton using fetch and AbortController
-- monitor lifecycle abstraction
-- alert sink interface and logging sink
-- graceful shutdown wiring
-- Docker and Docker Compose configuration
-- automated tests for config, database, API, retry, and checker behavior
+### 5.4 `DELETE /services/:id`
 
-## Known limitations
+Stops the scheduler job, marks the service inactive (soft delete keeps history queryable) or hard-deletes per a `?hard=true` flag. Returns `204`.
 
-This is intentionally not the full incident-detection product described in the design document. The following items are deferred:
+### 5.5 `GET /services/:id/incidents`
 
-- sustained outage detection logic and incident state machine
-- scheduler-driven periodic monitoring and rescheduling
-- rich metrics computations and time windows
-- alert integrations beyond the logging sink
-- background worker orchestration beyond the in-memory lifecycle
+Query params: `?status=open|resolved`, `?limit=`, `?before=` (cursor pagination).
 
-## Future improvements
+Response `200`:
+```json
+[
+  {
+    "id": "8f2a...",
+    "startedAt": "2026-08-13T13:42:00Z",
+    "resolvedAt": "2026-08-13T13:47:12Z",
+    "durationSeconds": 312,
+    "reason": "HTTP 503"
+  }
+]
+```
 
-The next logical implementation tasks are:
+### 5.6 `GET /services/:id/metrics`
 
-1. Build the scheduler so each service gets a self-rescheduling timeout loop
-2. Add the check-and-retry pipeline from monitor to checker to persistence
-3. Implement incident opening and resolution rules based on failed checks
-4. Extend the metrics API with time-window calculations
-5. Add more integration tests around health-check persistence and incident transitions
+Query params: `?window=1h|24h|7d` (default `24h`).
 
-## Recommended next step
+Response `200`:
+```json
+{
+  "window": "24h",
+  "uptimePercent": 99.91,
+  "avgResponseTimeMs": 138,
+  "totalChecks": 2880,
+  "failedChecks": 2,
+  "incidentCount": 1
+}
+```
 
-The single most logical next task is to implement the monitor scheduler and the end-to-end check pipeline: service registration -> timed probe -> retry -> health check persistence -> fail threshold evaluation.
+### 5.7 `GET /health`
 
-This keeps the project grounded in the architecture already established here while preserving a clean path to the full monitoring feature set.
-
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "monitor": "running",
+  "activeServices": 4
 }
 ```
 Returns `503` with `"status": "unhealthy"` if the DB ping fails or the scheduler has crashed. This is what a container orchestrator (or `docker-compose` healthcheck) would poll.
