@@ -75,6 +75,8 @@ export async function runServiceCheck(input: {
 
 async function probeWithRetry(input: {
   service: Service;
+  db: DatabaseApi;
+  now?: Date;
   registry: ProbeRegistry;
   logger: Logger;
   retry: { retries: number; baseDelayMs: number; factor: number };
@@ -92,6 +94,7 @@ async function probeWithRetry(input: {
 
   const secret = resolveSecret(input.service.secretRef);
   let lastClass: string | undefined;
+  const config = probeConfig(input);
 
   return retryCheck(async () => {
     const controller = new AbortController();
@@ -101,7 +104,7 @@ async function probeWithRetry(input: {
         {
           kind: input.service.kind,
           address: input.service.address || input.service.url,
-          config: input.service.config,
+          config,
         },
         {
           timeoutMs: input.service.timeoutMs,
@@ -126,4 +129,21 @@ async function probeWithRetry(input: {
       );
     },
   });
+}
+
+function probeConfig(input: { service: Service; db: DatabaseApi; now?: Date }): Record<string, unknown> {
+  const config: Record<string, unknown> = { ...input.service.config };
+  if (input.service.latencyBudgetMs != null) {
+    config.latencyBudgetMs = input.service.latencyBudgetMs;
+  }
+  if (input.service.kind !== "heartbeat") {
+    return config;
+  }
+  const beat = input.db.getHeartbeat(input.service.id);
+  return {
+    graceSeconds: beat?.graceSeconds ?? config.graceSeconds,
+    lastPingAt: beat?.lastPingAt ?? null,
+    createdAt: input.service.createdAt,
+    now: (input.now ?? new Date()).toISOString(),
+  };
 }

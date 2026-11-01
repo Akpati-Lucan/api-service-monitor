@@ -1,0 +1,47 @@
+# kubectl apply -f deploy/k8s
+# Create these Secrets before the pods start. This folder does not contain secret values.
+#   api-monitor-mcp-token   key token   REQUIRED for the MCP proxy. A read-scoped API token.
+#   api-monitor-secrets                 OPTIONAL. Probe passwords as env vars named by secretRef.
+# Read-only watches in the api-monitor namespace. No create, update, patch, delete,
+# pods/exec, or pods/portforward. Secrets are get/list here, not cluster-wide.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-monitor
+  namespace: api-monitor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: api-monitor-watch
+  namespace: api-monitor
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services", "secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api-monitor-watch
+  namespace: api-monitor
+subjects:
+  - kind: ServiceAccount
+    name: api-monitor
+    namespace: api-monitor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: api-monitor-watch

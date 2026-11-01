@@ -187,10 +187,15 @@ const version3SchemaSql = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hash);
 `;
 
+const version4SchemaSql = `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeats_token ON heartbeats(token_hash);
+`;
+
 const steps: Array<{ version: number; sql: string }> = [
   { version: 1, sql: version1SchemaSql },
   { version: 2, sql: version2SchemaSql },
   { version: 3, sql: version3SchemaSql },
+  { version: 4, sql: version4SchemaSql },
 ];
 
 export function runMigrations(db: Database.Database): void {

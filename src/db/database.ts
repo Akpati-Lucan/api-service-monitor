@@ -120,7 +120,19 @@ export interface DatabaseApi {
   createMaintenanceWindow(input: { groupId: string | null; serviceId: string | null; startsAt: string; endsAt: string; note?: string | null }): MaintenanceWindow;
   listMaintenanceWindows(): MaintenanceWindow[];
   recordIncidentUpdate(input: { incidentId: string; state: string; message: string; createdAt?: string }): IncidentUpdate;
+  insertHeartbeat(input: { serviceId: string; tokenHash: string; graceSeconds: number }): HeartbeatRow;
+  getHeartbeat(serviceId: string): HeartbeatRow | undefined;
+  getHeartbeatByHash(tokenHash: string): HeartbeatRow | undefined;
+  touchHeartbeat(serviceId: string, lastPingAt: string): void;
   ping(): boolean;
+}
+
+export interface HeartbeatRow {
+  id: string;
+  serviceId: string;
+  tokenHash: string;
+  graceSeconds: number;
+  lastPingAt: string | null;
 }
 
 const serviceSelect = `
@@ -845,6 +857,40 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     return update;
   }
 
+  function insertHeartbeat(input: { serviceId: string; tokenHash: string; graceSeconds: number }): HeartbeatRow {
+    const row: HeartbeatRow = {
+      id: randomUUID(),
+      serviceId: input.serviceId,
+      tokenHash: input.tokenHash,
+      graceSeconds: input.graceSeconds,
+      lastPingAt: null,
+    };
+    db.prepare(
+      `INSERT INTO heartbeats (id, service_id, token_hash, grace_seconds, last_ping_at) VALUES (?, ?, ?, ?, NULL)`,
+    ).run(row.id, row.serviceId, row.tokenHash, row.graceSeconds);
+    return row;
+  }
+
+  function getHeartbeat(serviceId: string): HeartbeatRow | undefined {
+    const row = db.prepare(
+      `SELECT id, service_id as serviceId, token_hash as tokenHash, grace_seconds as graceSeconds, last_ping_at as lastPingAt
+       FROM heartbeats WHERE service_id = ?`,
+    ).get(serviceId) as Record<string, unknown> | undefined;
+    return row ? mapHeartbeat(row) : undefined;
+  }
+
+  function getHeartbeatByHash(tokenHash: string): HeartbeatRow | undefined {
+    const row = db.prepare(
+      `SELECT id, service_id as serviceId, token_hash as tokenHash, grace_seconds as graceSeconds, last_ping_at as lastPingAt
+       FROM heartbeats WHERE token_hash = ?`,
+    ).get(tokenHash) as Record<string, unknown> | undefined;
+    return row ? mapHeartbeat(row) : undefined;
+  }
+
+  function touchHeartbeat(serviceId: string, lastPingAt: string): void {
+    db.prepare(`UPDATE heartbeats SET last_ping_at = ? WHERE service_id = ?`).run(lastPingAt, serviceId);
+  }
+
   function ping(): boolean {
     try {
       const result = db.prepare("SELECT 1 as ok").get() as { ok: number } | undefined;
@@ -906,7 +952,21 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     createMaintenanceWindow,
     listMaintenanceWindows,
     recordIncidentUpdate,
+    insertHeartbeat,
+    getHeartbeat,
+    getHeartbeatByHash,
+    touchHeartbeat,
     ping,
+  };
+}
+
+function mapHeartbeat(row: Record<string, unknown>): HeartbeatRow {
+  return {
+    id: String(row.id),
+    serviceId: String(row.serviceId),
+    tokenHash: String(row.tokenHash),
+    graceSeconds: Number(row.graceSeconds),
+    lastPingAt: row.lastPingAt == null ? null : String(row.lastPingAt),
   };
 }
 

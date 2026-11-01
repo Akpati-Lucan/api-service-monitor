@@ -63,7 +63,7 @@ export function createMcpRouter({
         res.json({ jsonrpc: "2.0", id, result });
         return;
       }
-      const tools = createMcpTools(db, monitor, auth);
+      const tools = createMcpTools(db, monitor, auth, config.ENABLED_PROBES);
       const result = await dispatch(body, tools, db, monitor, auth);
       res.json({ jsonrpc: "2.0", id, result });
     } catch (error) {

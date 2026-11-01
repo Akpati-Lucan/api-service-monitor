@@ -10,14 +10,16 @@ import {
   listMonitorViews,
   listOpenIncidentViews,
 } from "../application/readModels.js";
+import { listWorkloads } from "../application/workloads.js";
 import { requireGroup, requireScope, requestedGroup, visibleService } from "../auth/access.js";
 import type { Monitor } from "../services/monitor.js";
-import type { AuthContext, ServiceStatus } from "../types/index.js";
+import type { AuthContext, AuthScope, ServiceStatus } from "../types/index.js";
 
 export interface McpTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  scope?: AuthScope;
   call: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -30,8 +32,9 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
 
 export function createMcpTools(
   db: DatabaseApi,
-  monitor: Pick<Monitor, "isRunning" | "activeServiceCount"> | undefined,
+  monitor: (Pick<Monitor, "isRunning" | "activeServiceCount"> & Partial<Pick<Monitor, "runOnce">>) | undefined,
   auth: AuthContext,
+  enabledProbes: readonly string[] = [],
 ): McpTool[] {
   const tools: McpTool[] = [
     {
@@ -160,12 +163,37 @@ export function createMcpTools(
         return loadStatusDocument(db, auth, requireString(args.slug, "slug"));
       },
     },
+    {
+      name: "checks.run",
+      description: "Run one check now, including retries and incident evaluation. Returns the check result even when the target is down.",
+      scope: "write",
+      inputSchema: objectSchema({ serviceId: { type: "string" } }, ["serviceId"]),
+      async call(args) {
+        if (!monitor?.runOnce) {
+          throw new AppError("INTERNAL_ERROR", "Scheduler is not running", 503);
+        }
+        const service = visibleService(db, auth, requireString(args.serviceId, "serviceId"));
+        const outcome = await monitor.runOnce(service.id);
+        return outcome.result;
+      },
+    },
   ];
+
+  if (enabledProbes.some((kind) => kind.startsWith("k8s."))) {
+    tools.push({
+      name: "workloads.list",
+      description: "Kubernetes watches registered with this monitor, and their last status. This does not list arbitrary cluster objects.",
+      inputSchema: objectSchema({}),
+      async call() {
+        return listWorkloads(db, auth);
+      },
+    });
+  }
 
   return tools.map((tool) => ({
     ...tool,
     async call(args: Record<string, unknown>) {
-      requireScope(auth, "read");
+      requireScope(auth, tool.scope ?? "read");
       return tool.call(args);
     },
   }));

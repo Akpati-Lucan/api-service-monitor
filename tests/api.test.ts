@@ -98,7 +98,9 @@ describe("api", () => {
         unregisterService() {},
         isRunning: () => true,
         activeServiceCount: () => 0,
-        async runOnce() {},
+        async runOnce() {
+          return { result: { ok: true, status: "UP" as const, responseTimeMs: 0 }, effect: "none" as const, streak: 0 };
+        },
         async waitForIdle() {},
       },
     });

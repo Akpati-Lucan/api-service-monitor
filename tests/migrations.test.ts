@@ -58,7 +58,7 @@ describe("migrations", () => {
     ).all() as Array<{ name: string }>;
     upgraded.close();
 
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
     expect(group).toEqual({ name: "Default", slug: "default" });
     expect(tables).toHaveLength(12);
   });

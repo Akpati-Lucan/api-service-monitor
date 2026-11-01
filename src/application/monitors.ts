@@ -1,12 +1,15 @@
+import { randomBytes } from "node:crypto";
 import type { DatabaseApi } from "../db/database.js";
+import { hashToken } from "../auth/apiKeys.js";
+import { validateProbeConfig } from "../probes/validate.js";
 import type { AppConfig, Service, ServiceRole } from "../types/index.js";
-import { notFound, notImplemented, validationError } from "../utils/errors.js";
+import { conflict, notFound, notImplemented, validationError } from "../utils/errors.js";
 import { retryBudgetFits, worstCaseRetryMs } from "../utils/retryBudget.js";
 import { assertSecretRef } from "../probes/secrets.js";
 
 export interface CreateMonitorInput {
   name: string;
-  url: string;
+  url?: string;
   intervalSeconds?: number;
   timeoutMs?: number;
   failureThreshold?: number;
@@ -15,9 +18,15 @@ export interface CreateMonitorInput {
   secretRef?: string;
   groupId?: string;
   role?: ServiceRole;
+  config?: Record<string, unknown>;
+  latencyBudgetMs?: number | null;
 }
 
-export function createMonitor(db: DatabaseApi, config: AppConfig, input: CreateMonitorInput): Service {
+export interface CreatedMonitor extends Service {
+  heartbeatToken?: string;
+}
+
+export function createMonitor(db: DatabaseApi, config: AppConfig, input: CreateMonitorInput): CreatedMonitor {
   const kind = input.kind ?? "http";
   if (!config.ENABLED_PROBES.includes(kind)) {
     throw notImplemented(`Probe kind ${kind} is not enabled`);
@@ -50,9 +59,19 @@ export function createMonitor(db: DatabaseApi, config: AppConfig, input: CreateM
     });
   }
 
-  return db.createService({
-    name: input.name,
+  const validated = validateProbeConfig({
+    kind,
     url: input.url,
+    config: input.config,
+    latencyBudgetMs: input.latencyBudgetMs,
+    intervalSeconds,
+    nodeEnv: config.NODE_ENV,
+  });
+
+  const service = db.createService({
+    name: input.name,
+    url: validated.url,
+    address: validated.address,
     intervalSeconds,
     timeoutMs,
     failureThreshold,
@@ -61,5 +80,28 @@ export function createMonitor(db: DatabaseApi, config: AppConfig, input: CreateM
     secretRef: input.secretRef ?? null,
     groupId: input.groupId,
     role: input.role,
+    config: validated.config,
+    latencyBudgetMs: validated.latencyBudgetMs,
   });
+
+  if (kind !== "heartbeat") {
+    return service;
+  }
+
+  const token = `hb_${randomBytes(32).toString("base64url")}`;
+  const graceSeconds = Number(validated.config.graceSeconds);
+  try {
+    db.insertHeartbeat({ serviceId: service.id, tokenHash: hashToken(token), graceSeconds });
+  } catch (error) {
+    db.deactivateService(service.id);
+    if (isConstraint(error)) {
+      throw conflict("Heartbeat token is already in use");
+    }
+    throw error;
+  }
+  return { ...service, heartbeatToken: token };
+}
+
+function isConstraint(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && String(error.code).includes("CONSTRAINT"));
 }

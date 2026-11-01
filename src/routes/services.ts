@@ -7,7 +7,7 @@ import { createMonitor } from "../application/monitors.js";
 import { getServiceMetrics } from "../application/metrics.js";
 import { getMonitorView, listMonitorViews } from "../application/readModels.js";
 import { createNoopLogger, type Logger } from "../utils/logger.js";
-import { notFound, validationError } from "../utils/errors.js";
+import { AppError, notFound, validationError } from "../utils/errors.js";
 import { requireAuth, requireGroup, requireScope, visibleService } from "../auth/access.js";
 
 const optionalBoundedInt = (min: number, max: number, message: string) =>
@@ -18,15 +18,17 @@ const optionalBoundedInt = (min: number, max: number, message: string) =>
 
 const createServiceSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
-  url: z.string().url("must be a valid absolute URL"),
+  url: z.string().trim().min(1).optional(),
   intervalSeconds: optionalBoundedInt(5, 86400, "intervalSeconds must be at least 5"),
   timeoutMs: optionalBoundedInt(250, 60000, "timeoutMs must be at least 250"),
   failureThreshold: optionalBoundedInt(1, 100, "failureThreshold must be at least 1"),
   successThreshold: optionalBoundedInt(1, 100, "successThreshold must be at least 1"),
+  latencyBudgetMs: optionalBoundedInt(1, 60000, "latencyBudgetMs must be at least 1"),
   kind: z.string().trim().min(1).optional(),
   role: z.enum(["owned", "dependency"]).optional(),
   secretRef: z.string().regex(/^[A-Z0-9_]+$/, "secretRef must match [A-Z0-9_]").optional(),
   groupId: z.string().trim().min(1).optional(),
+  config: z.record(z.unknown()).optional(),
 });
 
 export function createServicesRouter({
@@ -37,7 +39,7 @@ export function createServicesRouter({
 }: {
   db: DatabaseApi;
   config: AppConfig;
-  monitor?: Pick<Monitor, "registerService" | "unregisterService">;
+  monitor?: Pick<Monitor, "registerService" | "unregisterService" | "runOnce">;
   logger?: Logger;
 }) {
   const router = Router();
@@ -61,7 +63,8 @@ export function createServicesRouter({
       monitor?.registerService(service);
 
       appLogger.info({ serviceId: service.id, name: service.name, kind: service.kind }, "service created");
-      res.status(201).json(getMonitorView(db, service.id));
+      const view = getMonitorView(db, service.id);
+      res.status(201).json(service.heartbeatToken ? { ...view, heartbeatToken: service.heartbeatToken } : view);
     } catch (error) {
       next(error);
     }
@@ -102,6 +105,21 @@ export function createServicesRouter({
       }
       monitor?.registerService(resumed);
       res.json(getMonitorView(db, service.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:id/check", async (req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "write");
+      const service = visibleService(db, auth, req.params.id);
+      if (!monitor) {
+        throw new AppError("INTERNAL_ERROR", "Scheduler is not running", 503);
+      }
+      const outcome = await monitor.runOnce(service.id);
+      res.json(outcome.result);
     } catch (error) {
       next(error);
     }

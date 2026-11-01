@@ -46,6 +46,7 @@ spec:
       labels:
         app: api-monitor
     spec:
+      serviceAccountName: api-monitor
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

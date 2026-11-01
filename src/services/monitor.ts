@@ -3,7 +3,8 @@ import type { DatabaseApi } from "../db/database.js";
 import type { ProbeRegistry } from "../probes/registry.js";
 import type { AlertSink } from "./alert.js";
 import type { Logger } from "../utils/logger.js";
-import { runServiceCheck } from "../application/checks.js";
+import { runServiceCheck, type CheckCycleResult } from "../application/checks.js";
+import { conflict, notFound } from "../utils/errors.js";
 import { rebuildStreak } from "../incidents/evaluate.js";
 
 export interface Monitor {
@@ -13,7 +14,7 @@ export interface Monitor {
   unregisterService(serviceId: string): void;
   isRunning(): boolean;
   activeServiceCount(): number;
-  runOnce(serviceId: string): Promise<void>;
+  runOnce(serviceId: string): Promise<CheckCycleResult>;
   waitForIdle(timeoutMs: number): Promise<void>;
 }
 
@@ -81,10 +82,17 @@ export class InMemoryMonitor implements Monitor {
     return this.active.size;
   }
 
-  async runOnce(serviceId: string): Promise<void> {
+  async runOnce(serviceId: string): Promise<CheckCycleResult> {
+    if (this.pending.has(serviceId)) {
+      throw conflict("A check is already running for this service");
+    }
     this.cancelled.delete(serviceId);
     this.active.add(serviceId);
-    await this.execute(serviceId, true);
+    const outcome = await this.execute(serviceId, true);
+    if (!outcome) {
+      throw notFound(`Service ${serviceId} does not exist`);
+    }
+    return outcome;
   }
 
   waitForIdle(timeoutMs: number): Promise<void> {
@@ -108,18 +116,18 @@ export class InMemoryMonitor implements Monitor {
     });
   }
 
-  private async execute(serviceId: string, force = false): Promise<void> {
+  private async execute(serviceId: string, force = false): Promise<CheckCycleResult | undefined> {
     if (this.pending.has(serviceId)) {
-      return;
+      return undefined;
     }
     if (!force && (!this.running || this.cancelled.has(serviceId))) {
-      return;
+      return undefined;
     }
 
     const service = this.deps.db.getService(serviceId);
-    if (!service || !service.isActive || service.paused) {
+    if (!service || !service.isActive || (service.paused && !force)) {
       this.unregisterService(serviceId);
-      return;
+      return undefined;
     }
 
     this.pending.add(serviceId);
@@ -135,6 +143,7 @@ export class InMemoryMonitor implements Monitor {
         retry: this.deps.retry,
       });
       this.streaks.set(serviceId, outcome.streak);
+      return outcome;
     } finally {
       this.pending.delete(serviceId);
       this.inflight -= 1;

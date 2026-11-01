@@ -13,6 +13,7 @@ import { createStatusPagesRouter } from "./routes/statusPages.js";
 import { createAlertRoutesRouter } from "./routes/alertRoutes.js";
 import { createMaintenanceRouter } from "./routes/maintenance.js";
 import { createIncidentsRouter } from "./routes/incidents.js";
+import { createHeartbeatsRouter } from "./routes/heartbeats.js";
 import { createMcpRouter } from "./mcp/http.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
 
@@ -37,6 +38,7 @@ export function createApp({ db, config, logger, monitor }: AppDependencies) {
 
   app.use("/health", createHealthRouter({ db, monitor, logger: appLogger }));
   app.use("/status", createPublicStatusRouter({ db, config }));
+  app.use("/heartbeats", createHeartbeatsRouter({ db }));
   app.use(createAuthMiddleware({ db, config }));
   app.use("/services", createServicesRouter({ db, config, monitor, logger: appLogger }));
   app.use("/groups", createGroupsRouter({ db }));
