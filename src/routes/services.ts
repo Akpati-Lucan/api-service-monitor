@@ -1,18 +1,45 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { DatabaseApi } from "../db/database.js";
+import type { AppConfig } from "../types/index.js";
+import type { Monitor } from "../services/monitor.js";
+import { createMonitor } from "../application/monitors.js";
+import { getServiceMetrics } from "../application/metrics.js";
+import { getMonitorView, listMonitorViews } from "../application/readModels.js";
 import { createNoopLogger, type Logger } from "../utils/logger.js";
 import { notFound, validationError } from "../utils/errors.js";
+import { requireAuth, requireGroup, requireScope, visibleService } from "../auth/access.js";
+
+const optionalBoundedInt = (min: number, max: number, message: string) =>
+  z.preprocess(
+    (value) => (value === undefined || value === null || value === "" ? undefined : value),
+    z.coerce.number().int().min(min, message).max(max).optional(),
+  );
 
 const createServiceSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   url: z.string().url("must be a valid absolute URL"),
-  intervalSeconds: z.coerce.number().int().positive().min(5, "intervalSeconds must be at least 5").max(86400),
-  timeoutMs: z.coerce.number().int().positive().min(250, "timeoutMs must be at least 250").max(60000),
-  failureThreshold: z.coerce.number().int().positive().min(1, "failureThreshold must be at least 1").max(100),
+  intervalSeconds: optionalBoundedInt(5, 86400, "intervalSeconds must be at least 5"),
+  timeoutMs: optionalBoundedInt(250, 60000, "timeoutMs must be at least 250"),
+  failureThreshold: optionalBoundedInt(1, 100, "failureThreshold must be at least 1"),
+  successThreshold: optionalBoundedInt(1, 100, "successThreshold must be at least 1"),
+  kind: z.string().trim().min(1).optional(),
+  role: z.enum(["owned", "dependency"]).optional(),
+  secretRef: z.string().regex(/^[A-Z0-9_]+$/, "secretRef must match [A-Z0-9_]").optional(),
+  groupId: z.string().trim().min(1).optional(),
 });
 
-export function createServicesRouter({ db, logger }: { db: DatabaseApi; logger?: Logger }) {
+export function createServicesRouter({
+  db,
+  config,
+  monitor,
+  logger,
+}: {
+  db: DatabaseApi;
+  config: AppConfig;
+  monitor?: Pick<Monitor, "registerService" | "unregisterService">;
+  logger?: Logger;
+}) {
   const router = Router();
   const appLogger = logger ?? createNoopLogger();
 
@@ -24,52 +51,91 @@ export function createServicesRouter({ db, logger }: { db: DatabaseApi; logger?:
         throw validationError("Validation failed", flattened.fieldErrors as Record<string, string[]>);
       }
 
-      const service = db.createService({
-        name: parsed.data.name,
-        url: parsed.data.url,
-        intervalSeconds: parsed.data.intervalSeconds,
-        timeoutMs: parsed.data.timeoutMs,
-        failureThreshold: parsed.data.failureThreshold,
-      });
+      const auth = requireAuth(res);
+      requireScope(auth, "write");
+      const groupId = auth.groupId ?? parsed.data.groupId;
+      if (auth.groupId && parsed.data.groupId && parsed.data.groupId !== auth.groupId) {
+        requireGroup(auth, parsed.data.groupId);
+      }
+      const service = createMonitor(db, config, { ...parsed.data, groupId });
+      monitor?.registerService(service);
 
-      appLogger.info({ serviceId: service.id, name: service.name }, "service created");
-      res.status(201).json({
-        id: service.id,
-        name: service.name,
-        url: service.url,
-        intervalSeconds: service.intervalSeconds,
-        timeoutMs: service.timeoutMs,
-        failureThreshold: service.failureThreshold,
-        isActive: service.isActive,
-        createdAt: service.createdAt,
-      });
+      appLogger.info({ serviceId: service.id, name: service.name, kind: service.kind }, "service created");
+      res.status(201).json(getMonitorView(db, service.id));
     } catch (error) {
       next(error);
     }
   });
 
-  router.get("/", (_req, res) => {
-    const services = db.listServices();
-    res.json(services.map((service) => ({
-      id: service.id,
-      name: service.name,
-      url: service.url,
-      intervalSeconds: service.intervalSeconds,
-      timeoutMs: service.timeoutMs,
-      failureThreshold: service.failureThreshold,
-      isActive: service.isActive,
-      createdAt: service.createdAt,
-      status: "UP",
-    })));
+  router.get("/", (_req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "read");
+      res.json(listMonitorViews(db, { groupId: auth.groupId ?? undefined }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:id/pause", (req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "write");
+      const service = visibleService(db, auth, req.params.id);
+      db.setServicePaused(service.id, true);
+      monitor?.unregisterService(service.id);
+      res.json(getMonitorView(db, service.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:id/resume", (req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "write");
+      const service = visibleService(db, auth, req.params.id);
+      db.setServicePaused(service.id, false);
+      const resumed = db.getService(service.id);
+      if (!resumed) {
+        throw notFound(`Service ${service.id} does not exist`);
+      }
+      monitor?.registerService(resumed);
+      res.json(getMonitorView(db, service.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:id/incidents", (req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "read");
+      const service = visibleService(db, auth, req.params.id);
+      res.json(db.listIncidents(service.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:id/metrics", (req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "read");
+      const service = visibleService(db, auth, req.params.id);
+      const window = typeof req.query.window === "string" ? req.query.window : "24h";
+      res.json(getServiceMetrics(db, service.id, window));
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.get("/:id", (req, res, next) => {
     try {
-      const service = db.getService(req.params.id);
-      if (!service) {
-        throw notFound(`Service ${req.params.id} does not exist`);
-      }
-      res.json(service);
+      const auth = requireAuth(res);
+      requireScope(auth, "read");
+      visibleService(db, auth, req.params.id);
+      res.json(getMonitorView(db, req.params.id));
     } catch (error) {
       next(error);
     }
@@ -77,36 +143,15 @@ export function createServicesRouter({ db, logger }: { db: DatabaseApi; logger?:
 
   router.delete("/:id", (req, res, next) => {
     try {
-      const service = db.getService(req.params.id);
-      if (!service) {
-        throw notFound(`Service ${req.params.id} does not exist`);
-      }
-      db.deactivateService(req.params.id);
+      const auth = requireAuth(res);
+      requireScope(auth, "write");
+      const service = visibleService(db, auth, req.params.id);
+      db.deactivateService(service.id);
+      monitor?.unregisterService(service.id);
       res.status(204).send();
     } catch (error) {
       next(error);
     }
-  });
-
-  router.get("/:id/incidents", (req, res) => {
-    res.json(db.listIncidents(req.params.id));
-  });
-
-  router.get("/:id/metrics", (req, res) => {
-    const service = db.getService(req.params.id);
-    if (!service) {
-      throw notFound(`Service ${req.params.id} does not exist`);
-    }
-
-    const checks = db.getRecentHealthChecks(req.params.id, 10);
-    res.json({
-      window: "24h",
-      uptimePercent: 100,
-      avgResponseTimeMs: checks.reduce((sum, item) => sum + (item.responseTimeMs ?? 0), 0) / Math.max(checks.length, 1),
-      totalChecks: checks.length,
-      failedChecks: checks.filter((item) => item.status === "DOWN").length,
-      incidentCount: db.listIncidents(req.params.id).length,
-    });
   });
 
   return router;

@@ -12,6 +12,12 @@ Small engineering teams often need visibility into whether critical APIs are hea
 - exposing a simple REST API for operational inspection
 - running in a single container with SQLite and minimal operational complexity
 
+## Public status page
+
+`GET /status/:slug` is the page customers read. The same document is available as JSON (`/status/:slug.json`), an SVG badge (`/status/:slug/badge.svg`), and an Atom feed (`/status/:slug/feed.xml`). The page is server-rendered HTML with its CSS in the response, so it does not depend on a font or stylesheet host.
+
+Visual rules live in `docs/DESIGN.md`. The brief is `docs/DESIGN_BRIEF.md`. Implementation notes are in `docs/DESIGN_IMPLEMENTATION_REPORT.md`.
+
 ## Architecture
 
 ```mermaid

@@ -1,4 +1,10 @@
 import type { Service } from "../types/index.js";
+import type { DatabaseApi } from "../db/database.js";
+import type { ProbeRegistry } from "../probes/registry.js";
+import type { AlertSink } from "./alert.js";
+import type { Logger } from "../utils/logger.js";
+import { runServiceCheck } from "../application/checks.js";
+import { rebuildStreak } from "../incidents/evaluate.js";
 
 export interface Monitor {
   start(): void;
@@ -7,14 +13,39 @@ export interface Monitor {
   unregisterService(serviceId: string): void;
   isRunning(): boolean;
   activeServiceCount(): number;
+  runOnce(serviceId: string): Promise<void>;
+  waitForIdle(timeoutMs: number): Promise<void>;
+}
+
+export interface MonitorDependencies {
+  db: DatabaseApi;
+  registry: ProbeRegistry;
+  alerts: AlertSink;
+  logger: Logger;
+  retry: { retries: number; baseDelayMs: number; factor: number };
 }
 
 export class InMemoryMonitor implements Monitor {
   private readonly jobs = new Map<string, NodeJS.Timeout>();
+  private readonly active = new Set<string>();
+  private readonly cancelled = new Set<string>();
+  private readonly pending = new Set<string>();
+  private readonly streaks = new Map<string, number>();
+  private readonly idleWaiters: Array<() => void> = [];
   private running = false;
+  private inflight = 0;
+
+  constructor(private readonly deps: MonitorDependencies) {}
 
   start(): void {
     this.running = true;
+    for (const service of this.deps.db.listServices()) {
+      if (service.paused) {
+        continue;
+      }
+      this.streaks.set(service.id, rebuildStreak(this.deps.db.getRecentHealthChecks(service.id, 50)));
+      this.registerService(service);
+    }
   }
 
   stop(): void {
@@ -26,15 +57,20 @@ export class InMemoryMonitor implements Monitor {
   }
 
   registerService(service: Service): void {
-    this.jobs.set(service.id, setTimeout(() => undefined, 0));
+    this.cancelled.delete(service.id);
+    this.active.add(service.id);
+    if (!this.streaks.has(service.id)) {
+      this.streaks.set(service.id, rebuildStreak(this.deps.db.getRecentHealthChecks(service.id, 50)));
+    }
+    this.clearTimer(service.id);
+    void this.execute(service.id);
   }
 
   unregisterService(serviceId: string): void {
-    const timer = this.jobs.get(serviceId);
-    if (timer) {
-      clearTimeout(timer);
-      this.jobs.delete(serviceId);
-    }
+    this.cancelled.add(serviceId);
+    this.active.delete(serviceId);
+    this.streaks.delete(serviceId);
+    this.clearTimer(serviceId);
   }
 
   isRunning(): boolean {
@@ -42,6 +78,100 @@ export class InMemoryMonitor implements Monitor {
   }
 
   activeServiceCount(): number {
-    return this.jobs.size;
+    return this.active.size;
+  }
+
+  async runOnce(serviceId: string): Promise<void> {
+    this.cancelled.delete(serviceId);
+    this.active.add(serviceId);
+    await this.execute(serviceId, true);
+  }
+
+  waitForIdle(timeoutMs: number): Promise<void> {
+    if (this.inflight === 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        const index = this.idleWaiters.indexOf(finish);
+        if (index >= 0) {
+          this.idleWaiters.splice(index, 1);
+        }
+        resolve();
+      }, timeoutMs);
+      const finish = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      this.idleWaiters.push(finish);
+    });
+  }
+
+  private async execute(serviceId: string, force = false): Promise<void> {
+    if (this.pending.has(serviceId)) {
+      return;
+    }
+    if (!force && (!this.running || this.cancelled.has(serviceId))) {
+      return;
+    }
+
+    const service = this.deps.db.getService(serviceId);
+    if (!service || !service.isActive || service.paused) {
+      this.unregisterService(serviceId);
+      return;
+    }
+
+    this.pending.add(serviceId);
+    this.inflight += 1;
+    try {
+      const outcome = await runServiceCheck({
+        service,
+        streak: this.streaks.get(serviceId) ?? 0,
+        db: this.deps.db,
+        registry: this.deps.registry,
+        alerts: this.deps.alerts,
+        logger: this.deps.logger,
+        retry: this.deps.retry,
+      });
+      this.streaks.set(serviceId, outcome.streak);
+    } finally {
+      this.pending.delete(serviceId);
+      this.inflight -= 1;
+      this.flushIdle();
+      if (this.running && !this.cancelled.has(serviceId)) {
+        const fresh = this.deps.db.getService(serviceId);
+        if (fresh && fresh.isActive && !fresh.paused) {
+          this.schedule(fresh);
+        }
+      }
+    }
+  }
+
+  private schedule(service: Service): void {
+    this.clearTimer(service.id);
+    const timer = setTimeout(() => {
+      this.jobs.delete(service.id);
+      void this.execute(service.id);
+    }, service.intervalSeconds * 1000);
+    this.jobs.set(service.id, timer);
+  }
+
+  private clearTimer(serviceId: string): void {
+    const timer = this.jobs.get(serviceId);
+    if (timer) {
+      clearTimeout(timer);
+      this.jobs.delete(serviceId);
+    }
+  }
+
+  private flushIdle(): void {
+    if (this.inflight > 0) {
+      return;
+    }
+    const waiters = this.idleWaiters.splice(0);
+    for (const waiter of waiters) {
+      waiter();
+    }
   }
 }

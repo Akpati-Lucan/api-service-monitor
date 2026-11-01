@@ -2,7 +2,11 @@ export type AppErrorCode =
   | "NOT_FOUND"
   | "VALIDATION_ERROR"
   | "DATABASE_ERROR"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "CONFLICT"
+  | "NOT_IMPLEMENTED";
 
 export class AppError extends Error {
   code: AppErrorCode;
@@ -32,4 +36,20 @@ export function databaseError(message: string) {
 
 export function internalError(message = "Internal server error") {
   return new AppError("INTERNAL_ERROR", message, 500);
+}
+
+export function unauthorized(message: string) {
+  return new AppError("UNAUTHORIZED", message, 401);
+}
+
+export function forbidden(message: string) {
+  return new AppError("FORBIDDEN", message, 403);
+}
+
+export function conflict(message: string) {
+  return new AppError("CONFLICT", message, 409);
+}
+
+export function notImplemented(message: string) {
+  return new AppError("NOT_IMPLEMENTED", message, 501);
 }

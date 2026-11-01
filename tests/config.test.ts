@@ -18,6 +18,7 @@ describe("config", () => {
 
     expect(parsed.PORT).toBe(3000);
     expect(parsed.NODE_ENV).toBe("development");
+    expect(parsed.AUTH_MODE).toBe("disabled");
   });
 
   it("fails invalid configuration", () => {

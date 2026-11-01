@@ -1,0 +1,21 @@
+---
+description: Status page visual identity. Read before changing status HTML or CSS.
+globs: src/status/**/*.ts
+alwaysApply: false
+---
+
+# Status page design system
+
+Before creating or modifying status-page markup or styles:
+
+1. Read `docs/DESIGN.md`.
+2. Read `docs/DESIGN_BRIEF.md` for who the page is for.
+3. Read `docs/DESIGN_DECISIONS.md` before changing layout, color, type, or motion.
+4. Reuse the signal, row, incident, and footer patterns in `docs/COMPONENT_GUIDELINES.md` and `src/status/render.ts`.
+5. Change tokens in `src/status/pageCss.ts`. Do not add a second stylesheet, Tailwind, or a font CDN.
+6. Keep text in `--ink` or `--muted` on `--sheet`. Status color is a lamp or a row strip, and the status word is always present.
+7. Keep the page usable at 640px and below. Keep the focus outline on links.
+8. Do not introduce the generic patterns listed in `docs/DESIGN.md`: cream and terracotta, acid green on black, rounded card grids, soft shadows, all-caps eyebrows, middle-dot meta, or load animations.
+9. After a visual change, load `GET /status/:slug` in a browser at a wide viewport and at a narrow one.
+10. Preserve the JSON status document, the heading `Dependencies`, component display names, the badge status word, and `Automatic:` in the Atom feed.
+11. When the design system changes, update `docs/DESIGN.md` and `docs/DESIGN_DECISIONS.md` in the same change.

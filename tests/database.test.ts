@@ -35,10 +35,29 @@ describe("database", () => {
     });
 
     expect(created.name).toBe("Payments API");
+    expect(created.kind).toBe("http");
+    expect(created.groupId).toBe("grp_default");
+    expect(created.address).toBe("https://api.example.com/health");
     expect(db.getService(created.id)).toMatchObject({
       id: created.id,
       name: "Payments API",
+      kind: "http",
     });
     expect(db.listServices()).toHaveLength(1);
+
+    const check = db.insertHealthCheck({
+      serviceId: created.id,
+      status: "DEGRADED",
+      responseTimeMs: 1200,
+      errorClass: "timeout",
+      evidence: { latencyBudgetMs: 800 },
+    });
+
+    expect(db.getRecentHealthChecks(created.id, 1)[0]).toMatchObject({
+      id: check.id,
+      status: "DEGRADED",
+      errorClass: "timeout",
+      evidence: { latencyBudgetMs: 800 },
+    });
   });
 });

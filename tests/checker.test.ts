@@ -40,6 +40,7 @@ describe("checker", () => {
 
     const result = await performCheck(`http://127.0.0.1:${fixture.port}/ok`, { timeoutMs: 3000 });
     expect(result.ok).toBe(true);
+    expect(result.status).toBe("UP");
     expect(result.httpStatus).toBe(200);
     expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
   });
@@ -53,6 +54,8 @@ describe("checker", () => {
 
     const result = await performCheck(`http://127.0.0.1:${fixture.port}/err`, { timeoutMs: 3000 });
     expect(result.ok).toBe(false);
+    expect(result.status).toBe("DOWN");
+    expect(result.errorClass).toBe("http_status");
     expect(result.httpStatus).toBe(500);
   });
 
@@ -66,6 +69,8 @@ describe("checker", () => {
 
     const result = await performCheck(`http://127.0.0.1:${fixture.port}/slow`, { timeoutMs: 200 });
     expect(result.ok).toBe(false);
+    expect(result.status).toBe("DOWN");
+    expect(result.errorClass).toBe("timeout");
     expect(result.error).toMatch(/timeout|Abort/i);
   });
 

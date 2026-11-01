@@ -12,6 +12,24 @@ export const configSchema = z.object({
   RETRY_FACTOR: z.coerce.number().min(1).max(10).default(2),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  ENABLED_PROBES: z
+    .string()
+    .default("http")
+    .transform((value) => value.split(",").map((item) => item.trim()).filter((item) => item.length > 0)),
+  MCP_ENABLED: z
+    .string()
+    .default("true")
+    .transform((value) => value !== "false" && value !== "0"),
+  AUTH_MODE: z.enum(["disabled", "enabled"]).default("disabled"),
+  MCP_ONLY: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  MONITOR_BASE_URL: z.string().default(""),
+  MCP_TOKEN: z.string().default(""),
+  SMTP_URL: z.string().default(""),
+  SMTP_FROM: z.string().default(""),
+  STATUS_BASE_URL: z.string().default("http://localhost:3000"),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {

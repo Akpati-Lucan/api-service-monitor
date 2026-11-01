@@ -1,0 +1,8 @@
+# kubectl apply -f deploy/k8s
+# Create these Secrets before the pods start. This folder does not contain secret values.
+#   api-monitor-mcp-token   key token   REQUIRED for the MCP proxy. A read-scoped API token.
+#   api-monitor-secrets                 OPTIONAL. Probe passwords as env vars named by secretRef.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: api-monitor
