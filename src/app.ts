@@ -1,3 +1,4 @@
+import path from "node:path";
 import express from "express";
 import type { DatabaseApi } from "./db/database.js";
 import type { AppConfig } from "./types/index.js";
@@ -35,6 +36,8 @@ export function createApp({ db, config, logger, monitor }: AppDependencies) {
     next();
   });
   app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ extended: false }));
+  app.use("/operator", express.static(path.join(process.cwd(), "public", "operator")));
 
   app.use("/health", createHealthRouter({ db, monitor, logger: appLogger }));
   app.use("/status", createPublicStatusRouter({ db, config }));

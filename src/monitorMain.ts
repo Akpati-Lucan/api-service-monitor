@@ -33,8 +33,19 @@ export function startMonitor(config: AppConfig, logger: Logger) {
       baseDelayMs: config.RETRY_BASE_DELAY_MS,
       factor: config.RETRY_FACTOR,
     },
+    sqliteRoot: config.SQLITE_PROBE_ROOT,
   });
   monitor.start();
+  const retention = setInterval(() => {
+    const cutoff = new Date(Date.now() - config.RETENTION_RAW_DAYS * 24 * 60 * 60 * 1000);
+    try {
+      const result = db.compactHealthChecks(cutoff.toISOString());
+      logger.info(result, "retention compacted raw checks");
+    } catch (error) {
+      logger.error({ err: error }, "retention failed");
+    }
+  }, 24 * 60 * 60 * 1000);
+  retention.unref();
 
   const app = createApp({ db, config, logger, monitor });
   const server = app.listen(config.PORT, () => {
@@ -43,6 +54,7 @@ export function startMonitor(config: AppConfig, logger: Logger) {
 
   const shutdown = (signal: string) => {
     logger.warn({ signal }, "received shutdown signal");
+    clearInterval(retention);
     const timeouts = db.listServices().map((service) => service.timeoutMs);
     const capMs = Math.max(config.DEFAULT_TIMEOUT_MS, ...timeouts, 0) + 1000;
 

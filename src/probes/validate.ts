@@ -26,6 +26,19 @@ export function validateProbeConfig(input: {
   if (input.kind === "tcp") return validateTcp(raw);
   if (input.kind === "tls") return validateTls(raw);
   if (input.kind === "heartbeat") return validateHeartbeat(raw, input.intervalSeconds);
+  if (input.kind === "postgres") return validatePostgres(raw, input.nodeEnv);
+  if (input.kind === "mysql") return validateMysql(raw);
+  if (input.kind === "mongodb") return validateMongodb(raw);
+  if (input.kind === "redis") return validateRedis(raw);
+  if (input.kind === "dns") return validateDns(raw);
+  if (input.kind === "domain") return validateDomain(raw);
+  if (input.kind === "s3") return validateS3(raw);
+  if (input.kind === "elastic") return validateElastic(raw);
+  if (input.kind === "rabbitmq") return validateRabbit(raw);
+  if (input.kind === "sqlite") return validateSqlite(raw);
+  if (input.kind === "memcached") return validateMemcached(raw);
+  if (input.kind === "etcd") return validateEtcd(raw);
+  if (input.kind === "http.flow") return validateFlow(raw);
   if (isK8sKind(input.kind)) return validateK8s(input.kind, raw);
   throw validationError("Unsupported probe config", { kind: [`${input.kind} has no config schema`] });
 }
@@ -116,6 +129,195 @@ function validateHeartbeat(raw: Record<string, unknown>, intervalSeconds: number
     throw validationError("Validation failed", { graceSeconds: ["graceSeconds must be at least the check interval"] });
   }
   return { url: "heartbeat", address: "heartbeat", latencyBudgetMs: null, config: { graceSeconds } };
+}
+
+function validatePostgres(raw: Record<string, unknown>, nodeEnv: string): ValidatedProbe {
+  const host = requireHost(raw.host);
+  const port = raw.port === undefined ? 5432 : requirePort(raw.port);
+  const database = requireString(raw.database, "database");
+  const user = requireString(raw.user, "user");
+  const ssl = raw.ssl === undefined ? (nodeEnv === "development" ? "disable" : "require") : raw.ssl;
+  if (ssl !== "disable" && ssl !== "require") {
+    throw validationError("Validation failed", { ssl: ["ssl must be disable or require"] });
+  }
+  const address = `${host}:${port}`;
+  return { url: address, address, latencyBudgetMs: null, config: { host, port, database, user, ssl } };
+}
+
+function validateMysql(raw: Record<string, unknown>): ValidatedProbe {
+  const host = requireHost(raw.host);
+  const port = raw.port === undefined ? 3306 : requirePort(raw.port);
+  const user = requireString(raw.user, "user");
+  const database = optionalString(raw.database, "database");
+  const variant = raw.variant === undefined ? null : raw.variant;
+  if (variant !== null && variant !== "mysql" && variant !== "mariadb") {
+    throw validationError("Validation failed", { variant: ["variant must be mysql or mariadb"] });
+  }
+  const ssl = raw.ssl === undefined ? "disable" : raw.ssl;
+  if (ssl !== "disable" && ssl !== "require") {
+    throw validationError("Validation failed", { ssl: ["ssl must be disable or require"] });
+  }
+  const address = `${host}:${port}`;
+  return {
+    url: address,
+    address,
+    latencyBudgetMs: null,
+    config: { host, port, user, database, variant, ssl },
+  };
+}
+
+function validateMongodb(raw: Record<string, unknown>): ValidatedProbe {
+  const uri = requireString(raw.uri, "uri");
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    throw validationError("Validation failed", { uri: ["uri must be a mongodb URI"] });
+  }
+  if (parsed.protocol !== "mongodb:" && parsed.protocol !== "mongodb+srv:") {
+    throw validationError("Validation failed", { uri: ["uri must be a mongodb URI"] });
+  }
+  if (parsed.password) {
+    throw validationError("Validation failed", { uri: ["uri must not contain a password; use secretRef"] });
+  }
+  return { url: uri, address: uri, latencyBudgetMs: null, config: { uri } };
+}
+
+function validateRedis(raw: Record<string, unknown>): ValidatedProbe {
+  const host = requireHost(raw.host);
+  const port = raw.port === undefined ? 6379 : requirePort(raw.port);
+  const tls = raw.tls === undefined ? false : raw.tls;
+  if (typeof tls !== "boolean") {
+    throw validationError("Validation failed", { tls: ["tls must be a boolean"] });
+  }
+  const address = `${host}:${port}`;
+  return { url: address, address, latencyBudgetMs: null, config: { host, port, tls } };
+}
+
+function validateDns(raw: Record<string, unknown>): ValidatedProbe {
+  const name = requireDnsName(raw.name, "name");
+  const type = raw.type;
+  if (type !== "A" && type !== "AAAA" && type !== "CNAME" && type !== "MX" && type !== "TXT") {
+    throw validationError("Validation failed", { type: ["type must be A, AAAA, CNAME, MX, or TXT"] });
+  }
+  const expected = optionalString(raw.expected, "expected");
+  return { url: name, address: name, latencyBudgetMs: null, config: { name, type, expected } };
+}
+
+function validateDomain(raw: Record<string, unknown>): ValidatedProbe {
+  const domain = requireDnsName(raw.domain, "domain");
+  const warnDays = raw.warnDays === undefined ? 30 : requirePositiveInt(raw.warnDays, "warnDays");
+  const downDays = raw.downDays === undefined ? 7 : requirePositiveInt(raw.downDays, "downDays");
+  if (warnDays <= downDays) {
+    throw validationError("Validation failed", { warnDays: ["warnDays must be greater than downDays"] });
+  }
+  return { url: domain, address: domain, latencyBudgetMs: null, config: { domain, warnDays, downDays } };
+}
+
+function validateS3(raw: Record<string, unknown>): ValidatedProbe {
+  const bucket = requireString(raw.bucket, "bucket");
+  const region = requireString(raw.region, "region");
+  const endpoint = raw.endpoint == null || raw.endpoint === "" ? null : requireString(raw.endpoint, "endpoint");
+  if (endpoint && !isAbsoluteHttpUrl(endpoint)) {
+    throw validationError("Validation failed", { endpoint: ["endpoint must be an absolute http(s) URL"] });
+  }
+  const address = endpoint ? `${endpoint.replace(/\/$/, "")}/${bucket}` : `https://${bucket}.s3.${region}.amazonaws.com/`;
+  return { url: address, address, latencyBudgetMs: null, config: { endpoint, region, bucket } };
+}
+
+function validateElastic(raw: Record<string, unknown>): ValidatedProbe {
+  const address = requireString(raw.address, "address");
+  if (!isAbsoluteHttpUrl(address)) {
+    throw validationError("Validation failed", { address: ["address must be an absolute http(s) URL"] });
+  }
+  const variant = raw.variant === undefined ? "elasticsearch" : raw.variant;
+  if (variant !== "elasticsearch" && variant !== "opensearch") {
+    throw validationError("Validation failed", { variant: ["variant must be elasticsearch or opensearch"] });
+  }
+  return { url: address, address, latencyBudgetMs: null, config: { address, variant } };
+}
+
+function validateRabbit(raw: Record<string, unknown>): ValidatedProbe {
+  const managementUrl = optionalString(raw.managementUrl, "managementUrl");
+  if (managementUrl) {
+    if (!isAbsoluteHttpUrl(managementUrl)) {
+      throw validationError("Validation failed", { managementUrl: ["managementUrl must be an absolute http(s) URL"] });
+    }
+    const user = requireString(raw.user, "user");
+    return { url: managementUrl, address: managementUrl, latencyBudgetMs: null, config: { managementUrl, user } };
+  }
+  const host = requireHost(raw.host);
+  const port = raw.port === undefined ? 5672 : requirePort(raw.port);
+  const address = `${host}:${port}`;
+  return { url: address, address, latencyBudgetMs: null, config: { host, port } };
+}
+
+function validateSqlite(raw: Record<string, unknown>): ValidatedProbe {
+  const file = requireString(raw.path, "path");
+  if (file.startsWith("/") || /^[A-Za-z]:[\\/]/.test(file) || file.split(/[/\\]/).includes("..")) {
+    throw validationError("Validation failed", { path: ["path must stay inside the sqlite probe root"] });
+  }
+  return { url: file, address: file, latencyBudgetMs: null, config: { path: file } };
+}
+
+function validateMemcached(raw: Record<string, unknown>): ValidatedProbe {
+  const host = requireHost(raw.host);
+  const port = raw.port === undefined ? 11211 : requirePort(raw.port);
+  const address = `${host}:${port}`;
+  return { url: address, address, latencyBudgetMs: null, config: { host, port } };
+}
+
+function validateEtcd(raw: Record<string, unknown>): ValidatedProbe {
+  const url = requireString(raw.url, "url");
+  if (!isAbsoluteHttpUrl(url)) {
+    throw validationError("Validation failed", { url: ["url must be an absolute http(s) URL"] });
+  }
+  return { url, address: url, latencyBudgetMs: null, config: { url } };
+}
+
+function validateFlow(raw: Record<string, unknown>): ValidatedProbe {
+  const steps = raw.steps;
+  if (!Array.isArray(steps) || steps.length < 1 || steps.length > 5) {
+    throw validationError("Validation failed", { steps: ["steps must contain 1 to 5 HTTP steps"] });
+  }
+  const normalized = steps.map((step, index) => normalizeFlowStep(step, index));
+  const firstUrl = normalized[0]?.url;
+  const first = typeof firstUrl === "string" ? firstUrl : "";
+  return { url: first, address: first, latencyBudgetMs: null, config: { steps: normalized } };
+}
+
+function normalizeFlowStep(step: unknown, index: number): Record<string, unknown> {
+  if (!step || typeof step !== "object" || Array.isArray(step)) {
+    throw validationError("Validation failed", { steps: [`step ${index + 1} must be an object`] });
+  }
+  const raw = step as Record<string, unknown>;
+  const url = requireString(raw.url, "url");
+  if (!isAbsoluteHttpUrl(url)) {
+    throw validationError("Validation failed", { url: [`step ${index + 1} url must be absolute`] });
+  }
+  const method = raw.method === undefined ? "GET" : raw.method;
+  if (method !== "GET" && method !== "POST") {
+    throw validationError("Validation failed", { method: [`step ${index + 1} method must be GET or POST`] });
+  }
+  return {
+    url,
+    method,
+    headers: raw.headers === undefined ? {} : raw.headers,
+    headerTemplate: raw.headerTemplate === undefined ? {} : raw.headerTemplate,
+    expectedStatus: optionalString(raw.expectedStatus, "expectedStatus"),
+    bodyIncludes: optionalString(raw.bodyIncludes, "bodyIncludes"),
+    jsonPath: optionalString(raw.jsonPath, "jsonPath"),
+    jsonEquals: optionalString(raw.jsonEquals, "jsonEquals"),
+    saveJsonPath: optionalString(raw.saveJsonPath, "saveJsonPath"),
+  };
+}
+
+function requireHost(value: unknown): string {
+  const host = requireString(value, "host");
+  if (host.length > 253 || /[\s/]/.test(host)) {
+    throw validationError("Validation failed", { host: ["host must be a hostname or address"] });
+  }
+  return host;
 }
 
 function validateK8s(kind: string, raw: Record<string, unknown>): ValidatedProbe {

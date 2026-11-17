@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operator</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+  <main id="sheet">
+    <h1>Operator</h1>
+    <nav aria-label="Operator">
+      <a href="#/monitors">Monitors</a>
+      <a href="#/groups">Groups</a>
+      <a href="#/pages">Status pages</a>
+      <a href="#/alerts">Alerts</a>
+      <a href="#/maintenance">Maintenance</a>
+    </nav>
+    <p class="token-row">
+      <label for="token">API token</label>
+      <input id="token" autocomplete="off" spellcheck="false">
+    </p>
+    <p id="status" class="note" role="status"></p>
+    <div id="view"></div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

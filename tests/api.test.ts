@@ -27,6 +27,8 @@ const testConfig: AppConfig = {
   SMTP_URL: "",
   SMTP_FROM: "",
   STATUS_BASE_URL: "http://localhost:3000",
+  RETENTION_RAW_DAYS: 14,
+  SQLITE_PROBE_ROOT: "",
   VERSION: "1.0.0",
 };
 

@@ -35,6 +35,8 @@ const config: AppConfig = {
   SMTP_URL: "",
   SMTP_FROM: "",
   STATUS_BASE_URL: "http://status.example",
+  RETENTION_RAW_DAYS: 14,
+  SQLITE_PROBE_ROOT: "",
   VERSION: "1.0.0",
 };
 

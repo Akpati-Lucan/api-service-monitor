@@ -17,6 +17,7 @@ describe("probe registry", () => {
   it("loads http only when it is enabled", () => {
     expect(createDefaultProbeRegistry(["http"]).kinds()).toEqual(["http"]);
     expect(createDefaultProbeRegistry([]).get("http")).toBeUndefined();
+    expect(createDefaultProbeRegistry(["http"]).get("postgres")).toBeUndefined();
   });
 
   it("registers an extra probe kind", async () => {

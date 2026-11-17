@@ -166,6 +166,12 @@ Forbidden on this page, from `SKILL.md` and from the research:
 - Do not change the JSON document to satisfy a visual change
 - Read this file, `docs/DESIGN_BRIEF.md`, and `docs/DESIGN_DECISIONS.md` before changing the status page
 
+## 26. Operator console
+
+Phase 6 adds `/operator/`. It is the same sheet, type, and tokens. It is not a second palette and not a sidebar product. Navigation is a line of text links. Monitor rows keep the 6px status strip and the status word. The lamp stays a circle and is only a small mark beside a name. Forms use square fields and an outlined button. The password is never a field. The field is the secret reference, the name of an environment variable.
+
+The public status page stays free of operator navigation. Its only new control is the email field under Updates, styled with the same field rules.
+
 ## Wireframe
 
 ```

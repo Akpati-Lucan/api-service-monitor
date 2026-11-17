@@ -7,6 +7,8 @@ import { loadStatusDocument } from "../status/pageData.js";
 import { renderStatusHtml } from "../status/render.js";
 import { renderBadge } from "../status/badge.js";
 import { renderAtomFeed } from "../status/feed.js";
+import { cancelSubscription, confirmSubscription, mailNotConfiguredPage, requestSubscription, subscriptionPendingPage } from "../application/subscribers.js";
+import { sendSmtp } from "../alerts/smtp.js";
 
 export function createPublicStatusRouter({ db, config }: { db: DatabaseApi; config: AppConfig }) {
   const router = Router();
@@ -41,6 +43,53 @@ export function createPublicStatusRouter({ db, config }: { db: DatabaseApi; conf
     }
   });
 
+  router.post("/:slug/subscribers", async (req, res, next) => {
+    try {
+      if (!config.SMTP_URL || !config.SMTP_FROM) {
+        res.status(503).type("html").send(mailNotConfiguredPage());
+        return;
+      }
+      const email = typeof req.body?.email === "string" ? req.body.email : "";
+      await requestSubscription({
+        db,
+        slug: req.params.slug,
+        email,
+        statusBaseUrl: config.STATUS_BASE_URL,
+        send: async (message) => {
+          if (!config.SMTP_URL || !config.SMTP_FROM) {
+            return;
+          }
+          await sendSmtp({
+            smtpUrl: config.SMTP_URL,
+            from: config.SMTP_FROM,
+            to: message.to,
+            subject: message.subject,
+            text: message.text,
+          });
+        },
+      });
+      res.status(202).type("html").send(subscriptionPendingPage());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:slug/subscribers/confirm/:token", (req, res, next) => {
+    try {
+      res.type("html").send(confirmSubscription(db, req.params.token));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:slug/subscribers/unsubscribe/:token", (req, res, next) => {
+    try {
+      res.type("html").send(cancelSubscription(db, req.params.token));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/:slug", (req, res, next) => {
     try {
       const document = loadStatusDocument(db, caller(db, config, req.params.slug, req.header("authorization")), req.params.slug);
@@ -49,6 +98,7 @@ export function createPublicStatusRouter({ db, config }: { db: DatabaseApi; conf
         jsonHref: `${req.params.slug}.json`,
         badgeHref: `${req.params.slug}/badge.svg`,
         feedHref: `${req.params.slug}/feed.xml`,
+        subscribeHref: `${req.params.slug}/subscribers`,
       }));
     } catch (error) {
       next(error);

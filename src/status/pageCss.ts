@@ -110,6 +110,23 @@ h2 {
 
 footer { margin-top: var(--space-6); }
 
+form { margin-top: var(--space-4); }
+label { display: block; margin-top: var(--space-3); }
+input, button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: var(--space-2) var(--space-3);
+}
+input { display: block; width: 100%; max-width: 24rem; margin-top: var(--space-2); }
+button { margin-top: var(--space-3); }
+input:focus-visible, button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
 a { color: var(--focus); text-underline-offset: 3px; }
 
 a:focus-visible {

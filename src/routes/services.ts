@@ -3,11 +3,11 @@ import { z } from "zod";
 import type { DatabaseApi } from "../db/database.js";
 import type { AppConfig } from "../types/index.js";
 import type { Monitor } from "../services/monitor.js";
-import { createMonitor } from "../application/monitors.js";
+import { createMonitor, updateMonitor } from "../application/monitors.js";
 import { getServiceMetrics } from "../application/metrics.js";
 import { getMonitorView, listMonitorViews } from "../application/readModels.js";
 import { createNoopLogger, type Logger } from "../utils/logger.js";
-import { AppError, notFound, validationError } from "../utils/errors.js";
+import { AppError, conflict, notFound, validationError } from "../utils/errors.js";
 import { requireAuth, requireGroup, requireScope, visibleService } from "../auth/access.js";
 
 const optionalBoundedInt = (min: number, max: number, message: string) =>
@@ -159,12 +159,39 @@ export function createServicesRouter({
     }
   });
 
-  router.delete("/:id", (req, res, next) => {
+  router.patch("/:id", (req, res, next) => {
     try {
       const auth = requireAuth(res);
       requireScope(auth, "write");
       const service = visibleService(db, auth, req.params.id);
-      db.deactivateService(service.id);
+      const parsed = createServiceSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        throw validationError("Validation failed", parsed.error.flatten().fieldErrors as Record<string, string[]>);
+      }
+      const updated = updateMonitor(db, config, service.id, parsed.data);
+      res.json(getMonitorView(db, updated.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/:id", (req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      const service = visibleService(db, auth, req.params.id);
+      if (req.query.hard === "true") {
+        requireScope(auth, "admin");
+        if (db.getOpenIncident(service.id)) {
+          throw conflict("An open incident blocks hard delete");
+        }
+        if (db.countHealthChecks(service.id) > 0) {
+          throw conflict("Health checks block hard delete until retention removes them");
+        }
+        db.deleteService(service.id);
+      } else {
+        requireScope(auth, "write");
+        db.deactivateService(service.id);
+      }
       monitor?.unregisterService(service.id);
       res.status(204).send();
     } catch (error) {

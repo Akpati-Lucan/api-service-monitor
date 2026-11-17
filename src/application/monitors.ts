@@ -102,6 +102,71 @@ export function createMonitor(db: DatabaseApi, config: AppConfig, input: CreateM
   return { ...service, heartbeatToken: token };
 }
 
+export function updateMonitor(
+  db: DatabaseApi,
+  config: AppConfig,
+  id: string,
+  input: {
+    name?: string;
+    url?: string;
+    intervalSeconds?: number;
+    timeoutMs?: number;
+    failureThreshold?: number;
+    successThreshold?: number;
+    secretRef?: string | null;
+    config?: Record<string, unknown>;
+    latencyBudgetMs?: number | null;
+  },
+): Service {
+  const current = db.getService(id);
+  if (!current || !current.isActive) {
+    throw notFound(`Service ${id} does not exist`);
+  }
+  if (input.secretRef) {
+    assertSecretRef(input.secretRef);
+  }
+  const intervalSeconds = input.intervalSeconds ?? current.intervalSeconds;
+  const timeoutMs = input.timeoutMs ?? current.timeoutMs;
+  const budgetInput = {
+    timeoutMs,
+    retries: config.RETRY_COUNT,
+    baseDelayMs: config.RETRY_BASE_DELAY_MS,
+    factor: config.RETRY_FACTOR,
+    intervalSeconds,
+  };
+  if (!retryBudgetFits(budgetInput)) {
+    const worstCase = Math.ceil(worstCaseRetryMs(budgetInput));
+    throw validationError("Retry budget must finish inside the check interval", {
+      intervalSeconds: [`worst case ${worstCase}ms does not fit in ${intervalSeconds}s`],
+    });
+  }
+  const validated = validateProbeConfig({
+    kind: current.kind,
+    url: input.url ?? current.url,
+    config: input.config ?? current.config,
+    latencyBudgetMs: input.latencyBudgetMs === undefined ? current.latencyBudgetMs : input.latencyBudgetMs,
+    intervalSeconds,
+    nodeEnv: config.NODE_ENV,
+  });
+  db.updateService(id, {
+    name: input.name ?? current.name,
+    url: validated.url,
+    address: validated.address,
+    intervalSeconds,
+    timeoutMs,
+    failureThreshold: input.failureThreshold ?? current.failureThreshold,
+    successThreshold: input.successThreshold ?? current.successThreshold,
+    secretRef: input.secretRef === undefined ? current.secretRef : input.secretRef,
+    config: validated.config,
+    latencyBudgetMs: validated.latencyBudgetMs,
+  });
+  const updated = db.getService(id);
+  if (!updated) {
+    throw notFound(`Service ${id} does not exist`);
+  }
+  return updated;
+}
+
 function isConstraint(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && String(error.code).includes("CONSTRAINT"));
 }

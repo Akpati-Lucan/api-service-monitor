@@ -3,6 +3,7 @@ import type { AlertRoute, AlertEvent } from "../types/index.js";
 import type { AlertSink } from "../services/alert.js";
 import type { Logger } from "../utils/logger.js";
 import { resolveSecret, scrubSecret } from "../probes/secrets.js";
+import { notifySubscribers } from "../application/subscribers.js";
 import { sendSmtp } from "./smtp.js";
 
 export class RoutingAlertSink implements AlertSink {
@@ -44,6 +45,29 @@ export class RoutingAlertSink implements AlertSink {
           error: message,
         });
       }
+    }
+
+    const pageSlug = this.options.db.listPublicSlugsForService(event.service.id)[0];
+    const pageUrl = pageSlug ? `${this.options.statusBaseUrl.replace(/\/$/, "")}/status/${pageSlug}` : undefined;
+    try {
+      await notifySubscribers({
+        db: this.options.db,
+        serviceId: event.service.id,
+        serviceName: event.service.name,
+        title: event.incident.reason,
+        pageUrl,
+        smtpUrl: this.options.smtpUrl,
+        smtpFrom: this.options.smtpFrom,
+        send: (message) => sendSmtp({
+          smtpUrl: this.options.smtpUrl,
+          from: this.options.smtpFrom,
+          to: message.to,
+          subject: message.subject,
+          text: message.text,
+        }),
+      });
+    } catch (error) {
+      this.options.logger.error({ err: error, incidentId: event.incident.id }, "subscriber mail failed");
     }
   }
 }

@@ -24,6 +24,7 @@ export interface MonitorDependencies {
   alerts: AlertSink;
   logger: Logger;
   retry: { retries: number; baseDelayMs: number; factor: number };
+  sqliteRoot?: string;
 }
 
 export class InMemoryMonitor implements Monitor {
@@ -141,6 +142,7 @@ export class InMemoryMonitor implements Monitor {
         alerts: this.deps.alerts,
         logger: this.deps.logger,
         retry: this.deps.retry,
+        sqliteRoot: this.deps.sqliteRoot,
       });
       this.streaks.set(serviceId, outcome.streak);
       return outcome;

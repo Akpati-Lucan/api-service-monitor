@@ -151,6 +151,8 @@ export interface AppConfig {
   SMTP_URL: string;
   SMTP_FROM: string;
   STATUS_BASE_URL: string;
+  RETENTION_RAW_DAYS: number;
+  SQLITE_PROBE_ROOT: string;
   VERSION?: string;
 }
 

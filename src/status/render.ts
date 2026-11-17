@@ -6,6 +6,7 @@ export interface StatusLinks {
   jsonHref: string;
   badgeHref: string;
   feedHref: string;
+  subscribeHref: string;
 }
 
 const HEADLINE: Record<PageStatus, string> = {
@@ -47,6 +48,13 @@ export function renderStatusHtml(document: StatusDocument, links?: StatusLinks):
     ${componentList(dependencies, "No outside services on this page.")}
     <h2>Incidents</h2>
     ${document.incidents.length === 0 ? "<p class=\"note\">No incidents in the last 14 days.</p>" : document.incidents.map(renderIncident).join("")}
+    <h2>Updates</h2>
+    <form method="post" action="${escapeHtml(links?.subscribeHref ?? "")}">
+      <p class="note">Email when an incident on this page opens or recovers. A confirmation link arrives first.</p>
+      <label for="subscriber-email">Email</label>
+      <input id="subscriber-email" name="email" type="email" autocomplete="email" required>
+      <button type="submit">Send confirmation</button>
+    </form>
     <footer>
       <p>Machine-readable copies: <a href="${escapeHtml(links?.jsonHref ?? "")}">JSON</a>, <a href="${escapeHtml(links?.badgeHref ?? "")}">badge</a>, <a href="${escapeHtml(links?.feedHref ?? "")}">feed</a>.</p>
     </footer>

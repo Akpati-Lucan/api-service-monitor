@@ -23,6 +23,7 @@ export async function runServiceCheck(input: {
   logger: Logger;
   retry: { retries: number; baseDelayMs: number; factor: number };
   now?: Date;
+  sqliteRoot?: string;
 }): Promise<CheckCycleResult> {
   const now = input.now ?? new Date();
   const maintenance = input.db.isMaintenanceActive(input.service.id, input.service.groupId, now.toISOString());
@@ -77,6 +78,7 @@ async function probeWithRetry(input: {
   service: Service;
   db: DatabaseApi;
   now?: Date;
+  sqliteRoot?: string;
   registry: ProbeRegistry;
   logger: Logger;
   retry: { retries: number; baseDelayMs: number; factor: number };
@@ -131,10 +133,16 @@ async function probeWithRetry(input: {
   });
 }
 
-function probeConfig(input: { service: Service; db: DatabaseApi; now?: Date }): Record<string, unknown> {
+function probeConfig(input: { service: Service; db: DatabaseApi; now?: Date; sqliteRoot?: string }): Record<string, unknown> {
   const config: Record<string, unknown> = { ...input.service.config };
   if (input.service.latencyBudgetMs != null) {
     config.latencyBudgetMs = input.service.latencyBudgetMs;
+  }
+  if (input.service.secretRef) {
+    config.secretExpected = true;
+  }
+  if (input.service.kind === "sqlite" && input.sqliteRoot) {
+    config.sqliteRoot = input.sqliteRoot;
   }
   if (input.service.kind !== "heartbeat") {
     return config;

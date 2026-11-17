@@ -1,0 +1,9 @@
+{
+  "name": "Harbor operator",
+  "short_name": "Operator",
+  "start_url": "/operator/",
+  "scope": "/operator/",
+  "display": "standalone",
+  "background_color": "#E4EEF2",
+  "theme_color": "#F7FBFC"
+}

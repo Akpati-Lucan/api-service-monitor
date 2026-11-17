@@ -15,6 +15,7 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src ./src
+COPY --from=builder /app/public ./public
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 EXPOSE 3000

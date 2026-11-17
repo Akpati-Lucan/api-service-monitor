@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import type { DatabaseApi } from "../db/database.js";
 import { addStatusComponent, createStatusPage } from "../application/statusPages.js";
+import { requireScope } from "../auth/access.js";
 import { requireAuth } from "../auth/access.js";
 import { validationError } from "../utils/errors.js";
 
@@ -20,6 +21,20 @@ const componentSchema = z.object({
 
 export function createStatusPagesRouter({ db }: { db: DatabaseApi }) {
   const router = Router();
+
+  router.get("/", (_req, res, next) => {
+    try {
+      const auth = requireAuth(res);
+      requireScope(auth, "read");
+      const pages = db.listStatusPages().filter((page) => {
+        if (!auth.groupId) return true;
+        return page.groupId === auth.groupId;
+      });
+      res.json(pages.map((page) => ({ ...page, components: db.listStatusComponents(page.id) })));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.post("/", (req, res, next) => {
     try {

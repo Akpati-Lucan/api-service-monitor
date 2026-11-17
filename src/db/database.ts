@@ -124,6 +124,26 @@ export interface DatabaseApi {
   getHeartbeat(serviceId: string): HeartbeatRow | undefined;
   getHeartbeatByHash(tokenHash: string): HeartbeatRow | undefined;
   touchHeartbeat(serviceId: string, lastPingAt: string): void;
+  countHealthChecks(serviceId: string): number;
+  compactHealthChecks(olderThanIso: string): { foldedHours: number; deleted: number };
+  updateService(id: string, input: {
+    name: string;
+    url: string;
+    address: string;
+    intervalSeconds: number;
+    timeoutMs: number;
+    failureThreshold: number;
+    successThreshold: number;
+    secretRef: string | null;
+    config: Record<string, unknown>;
+    latencyBudgetMs: number | null;
+  }): void;
+  listStatusPages(): StatusPage[];
+  insertSubscriber(input: { statusPageId: string; email: string; tokenHash: string }): { id: string };
+  getSubscriberByHash(tokenHash: string): { id: string; statusPageId: string; email: string; tokenHash: string; verifiedAt: string | null } | undefined;
+  verifySubscriber(id: string, verifiedAt: string): void;
+  deleteSubscriber(id: string): void;
+  listVerifiedSubscriberEmails(serviceId: string): string[];
   ping(): boolean;
 }
 
@@ -345,7 +365,18 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
   }
 
   function deleteService(id: string): void {
-    db.prepare(`DELETE FROM services WHERE id = ?`).run(id);
+    const drop = db.transaction(() => {
+      db.prepare(`DELETE FROM incident_updates WHERE incident_id IN (SELECT id FROM incidents WHERE service_id = ?)`).run(id);
+      db.prepare(`DELETE FROM acknowledgements WHERE incident_id IN (SELECT id FROM incidents WHERE service_id = ?)`).run(id);
+      db.prepare(`DELETE FROM alert_deliveries WHERE incident_id IN (SELECT id FROM incidents WHERE service_id = ?)`).run(id);
+      db.prepare(`DELETE FROM incidents WHERE service_id = ?`).run(id);
+      db.prepare(`DELETE FROM health_checks WHERE service_id = ?`).run(id);
+      db.prepare(`DELETE FROM check_rollups WHERE service_id = ?`).run(id);
+      db.prepare(`DELETE FROM heartbeats WHERE service_id = ?`).run(id);
+      db.prepare(`DELETE FROM status_components WHERE service_id = ?`).run(id);
+      db.prepare(`DELETE FROM services WHERE id = ?`).run(id);
+    });
+    drop();
   }
 
   function insertHealthCheck(input: {
@@ -891,6 +922,153 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     db.prepare(`UPDATE heartbeats SET last_ping_at = ? WHERE service_id = ?`).run(lastPingAt, serviceId);
   }
 
+  function countHealthChecks(serviceId: string): number {
+    const row = db.prepare(`SELECT COUNT(*) as total FROM health_checks WHERE service_id = ?`).get(serviceId) as { total: number };
+    return Number(row.total);
+  }
+
+  function compactHealthChecks(olderThanIso: string): { foldedHours: number; deleted: number } {
+    const rows = db.prepare(
+      `SELECT service_id, status, response_time_ms, checked_at FROM health_checks WHERE checked_at < ?`,
+    ).all(olderThanIso) as Array<{ service_id: string; status: string; response_time_ms: number | null; checked_at: string }>;
+    const groups = new Map<string, {
+      serviceId: string;
+      hour: string;
+      checks: number;
+      upChecks: number;
+      degradedChecks: number;
+      downChecks: number;
+      latency: number;
+      samples: number;
+    }>();
+    for (const row of rows) {
+      const hour = `${row.checked_at.slice(0, 13)}:00:00.000Z`;
+      const key = `${row.service_id}|${hour}`;
+      const group = groups.get(key) ?? {
+        serviceId: row.service_id,
+        hour,
+        checks: 0,
+        upChecks: 0,
+        degradedChecks: 0,
+        downChecks: 0,
+        latency: 0,
+        samples: 0,
+      };
+      group.checks += 1;
+      if (row.status === "UP") group.upChecks += 1;
+      else if (row.status === "DEGRADED") group.degradedChecks += 1;
+      else group.downChecks += 1;
+      if (row.response_time_ms != null) {
+        group.latency += row.response_time_ms;
+        group.samples += 1;
+      }
+      groups.set(key, group);
+    }
+
+    const upsert = db.prepare(
+      `INSERT INTO check_rollups (hour, service_id, checks, up_checks, degraded_checks, down_checks, avg_response_time_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(service_id, hour) DO UPDATE SET
+         checks = check_rollups.checks + excluded.checks,
+         up_checks = check_rollups.up_checks + excluded.up_checks,
+         degraded_checks = check_rollups.degraded_checks + excluded.degraded_checks,
+         down_checks = check_rollups.down_checks + excluded.down_checks,
+         avg_response_time_ms = CASE
+           WHEN check_rollups.checks + excluded.checks = 0 THEN 0
+           ELSE CAST(ROUND((check_rollups.avg_response_time_ms * check_rollups.checks + excluded.avg_response_time_ms * excluded.checks) * 1.0 / (check_rollups.checks + excluded.checks)) AS INTEGER)
+         END`,
+    );
+    const remove = db.prepare(`DELETE FROM health_checks WHERE checked_at < ?`);
+    const foldedHours = groups.size;
+    const deleted = db.transaction(() => {
+      for (const group of groups.values()) {
+        const average = group.samples === 0 ? 0 : Math.round(group.latency / group.samples);
+        upsert.run(group.hour, group.serviceId, group.checks, group.upChecks, group.degradedChecks, group.downChecks, average);
+      }
+      return Number(remove.run(olderThanIso).changes);
+    })();
+    return { foldedHours, deleted };
+  }
+
+  function updateService(id: string, input: {
+    name: string;
+    url: string;
+    address: string;
+    intervalSeconds: number;
+    timeoutMs: number;
+    failureThreshold: number;
+    successThreshold: number;
+    secretRef: string | null;
+    config: Record<string, unknown>;
+    latencyBudgetMs: number | null;
+  }): void {
+    db.prepare(
+      `UPDATE services
+       SET name = ?, url = ?, address = ?, interval_seconds = ?, timeout_ms = ?, failure_threshold = ?,
+           success_threshold = ?, secret_ref = ?, config_json = ?, latency_budget_ms = ?
+       WHERE id = ?`,
+    ).run(
+      input.name,
+      input.url,
+      input.address,
+      input.intervalSeconds,
+      input.timeoutMs,
+      input.failureThreshold,
+      input.successThreshold,
+      input.secretRef,
+      JSON.stringify(input.config),
+      input.latencyBudgetMs,
+      id,
+    );
+  }
+
+  function listStatusPages(): StatusPage[] {
+    const rows = db.prepare(
+      `SELECT id, group_id as groupId, slug, title, visibility, created_at as createdAt FROM status_pages ORDER BY title`,
+    ).all() as Array<Record<string, unknown>>;
+    return rows.map(mapStatusPage);
+  }
+
+  function insertSubscriber(input: { statusPageId: string; email: string; tokenHash: string }): { id: string } {
+    const id = randomUUID();
+    db.prepare(
+      `INSERT INTO subscribers (id, status_page_id, email, token_hash, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, ?)`,
+    ).run(id, input.statusPageId, input.email, input.tokenHash, new Date().toISOString());
+    return { id };
+  }
+
+  function getSubscriberByHash(tokenHash: string): { id: string; statusPageId: string; email: string; tokenHash: string; verifiedAt: string | null } | undefined {
+    const row = db.prepare(
+      `SELECT id, status_page_id as statusPageId, email, token_hash as tokenHash, verified_at as verifiedAt FROM subscribers WHERE token_hash = ?`,
+    ).get(tokenHash) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    return {
+      id: String(row.id),
+      statusPageId: String(row.statusPageId),
+      email: String(row.email),
+      tokenHash: String(row.tokenHash),
+      verifiedAt: row.verifiedAt == null ? null : String(row.verifiedAt),
+    };
+  }
+
+  function verifySubscriber(id: string, verifiedAt: string): void {
+    db.prepare(`UPDATE subscribers SET verified_at = ? WHERE id = ?`).run(verifiedAt, id);
+  }
+
+  function deleteSubscriber(id: string): void {
+    db.prepare(`DELETE FROM subscribers WHERE id = ?`).run(id);
+  }
+
+  function listVerifiedSubscriberEmails(serviceId: string): string[] {
+    const rows = db.prepare(
+      `SELECT DISTINCT subscribers.email as email
+       FROM subscribers
+       JOIN status_components ON status_components.status_page_id = subscribers.status_page_id
+       WHERE status_components.service_id = ? AND subscribers.verified_at IS NOT NULL`,
+    ).all(serviceId) as Array<{ email: string }>;
+    return rows.map((row) => row.email);
+  }
+
   function ping(): boolean {
     try {
       const result = db.prepare("SELECT 1 as ok").get() as { ok: number } | undefined;
@@ -956,6 +1134,15 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     getHeartbeat,
     getHeartbeatByHash,
     touchHeartbeat,
+    countHealthChecks,
+    compactHealthChecks,
+    updateService,
+    listStatusPages,
+    insertSubscriber,
+    getSubscriberByHash,
+    verifySubscriber,
+    deleteSubscriber,
+    listVerifiedSubscriberEmails,
     ping,
   };
 }
