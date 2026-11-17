@@ -4,9 +4,10 @@ import { DELETED_ACCOUNT_DAYS, RESET_HOURS, SESSION_DAYS, VERIFY_HOURS } from ".
 import type { DomainVerification, OrganizationRecord, PublicUser, PublisherNotification, PublisherProfile } from "./identity.js";
 import type { ListingRecord, ReviewRecord } from "./store.js";
 
-function shell(title: string, body: string): string {
+function shell(title: string, body: string, billing = false): string {
+  const billingLink = billing ? `<a href="/billing">Billing</a>` : "";
   return visionDocument(title, `<h1>${escapeHtml(title)}</h1>
-    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a><a href="/operator/">Monitor</a></nav>
+    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a>${billingLink}<a href="/operator/">Monitor</a></nav>
     ${body}`);
 }
 
@@ -54,7 +55,7 @@ export function resetPage(token: string): string {
     </form>`);
 }
 
-export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: string): string {
+export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: string, billing = false): string {
   const list = orgs.length
     ? `<ul>${orgs.map((org) => `<li>${escapeHtml(org.name)} · ${escapeHtml(org.role ?? "member")}</li>`).join("")}</ul>`
     : `<p class="note">No organization yet.</p>`;
@@ -73,7 +74,7 @@ export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: 
       ${csrfField(csrf)}
       <label>Password<input name="password" type="password" required></label>
       <button type="submit">Delete account</button>
-    </form>`);
+    </form>`, billing);
 }
 
 export function publisherHome(input: {
@@ -85,6 +86,7 @@ export function publisherHome(input: {
   listings: ListingRecord[];
   notifications: PublisherNotification[];
   members: Array<{ userId: string; role: string }>;
+  billing?: boolean;
 }): string {
   const org = input.orgs.find((item) => item.id === input.organizationId);
   const notices = input.notifications.map((item) => `<li>${escapeHtml(item.message)}</li>`).join("");
@@ -104,7 +106,9 @@ export function publisherHome(input: {
   const orgForm = input.orgs.length === 0
     ? `<form method="post" action="/publisher/organizations">${csrfField(input.csrf)}<label>Organization name<input name="name" required></label><button type="submit">Create organization</button></form>`
     : `<p>${escapeHtml(org?.name ?? "Organization")}</p>`;
+  const offers = input.billing ? `<p><a href="/publisher/offers?organizationId=${escapeHtml(input.organizationId)}">Marketplace offers</a></p>` : "";
   return shell("Publisher", `<p>Listings belong to an organization. An email address does not prove that you operate a domain. Payment contact is not collected.</p>
+    ${offers}
     ${orgForm}
     <h2>Profile</h2>
     <form method="post" action="/publisher/profile">
@@ -139,7 +143,7 @@ export function publisherHome(input: {
       <button type="submit">Invite</button>
     </form>
     <h2>Notices</h2>
-    ${notices ? `<ul>${notices}</ul>` : `<p class="note">No notices.</p>`}`);
+    ${notices ? `<ul>${notices}</ul>` : `<p class="note">No notices.</p>`}`, input.billing === true);
 }
 
 export function listingForm(csrf: string, organizationId: string, listing?: ListingRecord): string {

@@ -175,7 +175,7 @@ export function editorGate(portal = false): string {
     </form>`);
 }
 
-export function editorPage(token: string, listings: ListingRecord[], reports: ReportRecord[], guides: Array<{ id: string; title: string; slug: string }> = [], guideReports: Array<{ kind: string; note: string }> = [], extras?: { portal?: boolean; appeals?: Array<{ id: string; note: string }>; domains?: Array<{ id: string; domain: string }>; audit?: Array<{ action: string; createdAt: string }>; duplicates?: string[] }): string {
+export function editorPage(token: string, listings: ListingRecord[], reports: ReportRecord[], guides: Array<{ id: string; title: string; slug: string }> = [], guideReports: Array<{ kind: string; note: string }> = [], extras?: { portal?: boolean; appeals?: Array<{ id: string; note: string }>; domains?: Array<{ id: string; domain: string }>; audit?: Array<{ action: string; createdAt: string }>; duplicates?: string[]; billing?: { counts: string[]; problems: string[]; offers: Array<{ id: string; planName: string }>; subscriptions: Array<{ id: string; state: string }>; accounts: Array<{ processorAccountRef: string; onboardingState: string; chargesEnabled: boolean }>; ledger: string[]; publishers: Array<{ id: string; restricted: boolean }> } }): string {
   const rows = listings.map((listing) => `<article class="card">
     <h2>${escapeHtml(listing.name)}</h2>
     <p class="meta">${escapeHtml(listing.status)} · ${escapeHtml(listing.slug)}</p>
@@ -218,6 +218,23 @@ export function editorPage(token: string, listings: ListingRecord[], reports: Re
     </li>`).join("");
   const audit = (extras?.audit ?? []).map((row) => `<li>${escapeHtml(row.createdAt)} ${escapeHtml(row.action)}</li>`).join("");
   const duplicates = (extras?.duplicates ?? []).map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+  const billing = extras?.billing;
+  const billingHtml = billing ? `<h2>Billing reconciliation</h2>
+    ${billing.counts.length ? `<ul>${billing.counts.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="note">No marketplace subscriptions.</p>`}
+    ${billing.problems.length ? `<ul>${billing.problems.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="note">No failed billing events.</p>`}
+    <form method="post" action="/vision/editor/billing/reconcile"><input type="hidden" name="token" value="${escapeHtml(token)}"><button type="submit">Reconcile</button></form>
+    <h2>Draft offers</h2>
+    ${billing.offers.length ? `<ul>${billing.offers.map((offer) => `<li>${escapeHtml(offer.planName)} <form method="post" action="/vision/editor/offers/${escapeHtml(offer.id)}/activate"><input type="hidden" name="token" value="${escapeHtml(token)}"><label>Processor price<input name="providerPriceRef"></label><button type="submit">Activate offer</button></form></li>`).join("")}</ul>` : `<p class="note">No draft offers.</p>`}
+    <h2>Ledger</h2>
+    ${billing.ledger.length ? `<ul>${billing.ledger.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : `<p class="note">No ledger totals.</p>`}
+    <h2>Publisher eligibility</h2>
+    ${billing.publishers.length ? `<ul>${billing.publishers.map((publisher) => `<li>${escapeHtml(publisher.id)} · ${publisher.restricted ? "restricted" : "eligible"}
+      <form method="post" action="/vision/editor/billing/${publisher.restricted ? "restore" : "restrict"}"><input type="hidden" name="token" value="${escapeHtml(token)}"><input type="hidden" name="publisherId" value="${escapeHtml(publisher.id)}"><label>Reason<input name="reason" value="${publisher.restricted ? "Onboarding restored." : "Publisher lost eligibility."}"></label><label>Approved<input type="checkbox" name="approved" value="yes"></label><button type="submit">${publisher.restricted ? "Restore checkouts" : "Stop new checkouts"}</button></form></li>`).join("")}</ul>` : `<p class="note">No publisher accounts.</p>`}
+    <h2>Refunds</h2>
+    ${billing.subscriptions.length ? `<ul>${billing.subscriptions.map((subscription) => `<li>${escapeHtml(subscription.state)} <form method="post" action="/vision/editor/billing/refund"><input type="hidden" name="token" value="${escapeHtml(token)}"><input type="hidden" name="subscriptionId" value="${escapeHtml(subscription.id)}"><label>Amount in minor units<input name="amountMinor" value="100"></label><label>Reason<input name="reason" value="Customer requested a refund."></label><label>Approved<input type="checkbox" name="approved" value="yes"></label><button type="submit">Refund</button></form></li>`).join("")}</ul>` : `<p class="note">No subscriptions to refund.</p>`}
+    <h2>Connected accounts</h2>
+    <p>These processor identifiers stay on the staff page.</p>
+    ${billing.accounts.length ? `<ul>${billing.accounts.map((account) => `<li>${escapeHtml(account.processorAccountRef)} · ${escapeHtml(account.onboardingState)} · ${account.chargesEnabled ? "charges enabled" : "charges disabled"}</li>`).join("")}</ul>` : `<p class="note">No connected accounts.</p>`}` : "";
   return document("Vision API editor", `<h1>Editor</h1>
     ${nav(extras?.portal === true)}
     <p>Preview shows the summary and the internal review note. Publish, suspend, and retire update the public directory immediately.</p>
@@ -227,6 +244,7 @@ export function editorPage(token: string, listings: ListingRecord[], reports: Re
     ${domains ? `<ul>${domains}</ul>` : `<p class="note">No manual domain checks.</p>`}
     <h2>Appeals</h2>
     ${appeals ? `<ul>${appeals}</ul>` : `<p class="note">No open appeals.</p>`}
+    ${billingHtml}
     <h2>Audit</h2>
     ${audit ? `<ul>${audit}</ul>` : `<p class="note">No audit records.</p>`}
     <h2>Moderation queue</h2>

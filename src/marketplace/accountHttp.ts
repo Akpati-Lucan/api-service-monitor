@@ -36,6 +36,8 @@ import {
   type PublisherDeps,
   type SessionGrant,
 } from "./publisher.js";
+import type { BillingStore } from "./billingStore.js";
+import { billingExport } from "./billing.js";
 import {
   accountHome,
   forgotPage,
@@ -49,12 +51,12 @@ import {
   resetPage,
 } from "./accountPages.js";
 
-export function mountAccounts(app: Express, identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps): void {
-  app.use("/account", createAccountRouter(identity, store, deps));
+export function mountAccounts(app: Express, identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, billing: BillingStore): void {
+  app.use("/account", createAccountRouter(identity, store, deps, billing));
   app.use("/publisher", createPublisherRouter(identity, store, deps));
 }
 
-function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps): Router {
+function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, billing: BillingStore): Router {
   const router = Router();
   router.get("/register", (_req, res) => sendHtml(res, 200, registerPage()));
   router.post("/register", async (req, res, next) => {
@@ -131,7 +133,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
     try {
       purgeExpiredAccounts(identity);
       const current = loadSession(identity, req.header("cookie"));
-      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken));
+      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -139,7 +141,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
   router.get("/export", (req, res, next) => {
     try {
       const current = loadSession(identity, req.header("cookie"));
-      const body = exportAccount(identity, store, current.user);
+      const body = { ...exportAccount(identity, store, current.user), billing: billingExport(billing, identity, current.user.id) };
       res.status(200).type("json").setHeader("Content-Disposition", "attachment; filename=\"account.json\"").send(body);
     } catch (error) {
       next(error);
@@ -163,7 +165,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
       const current = loadSession(identity, req.header("cookie"));
       assertCsrf(current.session, req.body, req.header("x-csrf-token"));
       acceptInvitation(identity, current.user, text(req.body, "token"));
-      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken));
+      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -177,7 +179,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
   router.get("/", (req, res, next) => {
     try {
       const current = loadSession(identity, req.header("cookie"));
-      sendHtml(res, 200, home(identity, store, current, orgId(req)));
+      sendHtml(res, 200, home(identity, store, current, orgId(req), deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -186,7 +188,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
     try {
       const current = guard(req, identity);
       createOrganization(identity, current.user, text(req.body, "name"));
-      sendHtml(res, 200, home(identity, store, current, ""));
+      sendHtml(res, 200, home(identity, store, current, "", deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -202,7 +204,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
         termsUrl: text(req.body, "termsUrl"),
         regions: text(req.body, "regions"),
       });
-      sendHtml(res, 200, home(identity, store, current, organizationId));
+      sendHtml(res, 200, home(identity, store, current, organizationId, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -212,7 +214,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       startDomain(identity, current.user, organizationId, text(req.body, "domain"), text(req.body, "method"));
-      sendHtml(res, 200, home(identity, store, current, organizationId));
+      sendHtml(res, 200, home(identity, store, current, organizationId, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -222,7 +224,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       await checkDomain(identity, deps, current.user, organizationId, one(req.params.id));
-      sendHtml(res, 200, home(identity, store, current, organizationId));
+      sendHtml(res, 200, home(identity, store, current, organizationId, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -232,7 +234,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       await inviteMember(identity, deps, current.user, organizationId, text(req.body, "email"), text(req.body, "role"));
-      sendHtml(res, 200, home(identity, store, current, organizationId));
+      sendHtml(res, 200, home(identity, store, current, organizationId, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -242,7 +244,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       changeRole(identity, current.user, organizationId, one(req.params.userId), text(req.body, "role"));
-      sendHtml(res, 200, home(identity, store, current, organizationId));
+      sendHtml(res, 200, home(identity, store, current, organizationId, deps.config.VISION_BILLING_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -344,10 +346,10 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
 function showAccount(res: Response, deps: PublisherDeps, identity: IdentityStore, store: MarketplaceStore, grant: SessionGrant) {
   res.setHeader("Set-Cookie", sessionCookie(grant.token, deps.config.NODE_ENV === "production", 14 * 24 * 60 * 60));
   const current = loadSession(identity, `${"vision_session"}=${encodeURIComponent(grant.token)}`);
-  sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken));
+  sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED));
 }
 
-function home(identity: IdentityStore, store: MarketplaceStore, current: ReturnType<typeof loadSession>, requested: string): string {
+function home(identity: IdentityStore, store: MarketplaceStore, current: ReturnType<typeof loadSession>, requested: string, billing = false): string {
   const orgs = identity.listOrganizationsForUser(current.user.id);
   const organizationId = orgs.some((org) => org.id === requested) ? requested : orgs[0]?.id ?? "";
   return publisherHome({
@@ -359,6 +361,7 @@ function home(identity: IdentityStore, store: MarketplaceStore, current: ReturnT
     listings: organizationId ? store.listOwnedListings(organizationId) : [],
     notifications: organizationId ? identity.listNotifications(organizationId) : [],
     members: organizationId ? identity.listMembers(organizationId).map((member) => ({ userId: member.userId, role: member.role })) : [],
+    billing,
   });
 }
 

@@ -42,6 +42,18 @@ export const configSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true" || value === "1"),
+  VISION_BILLING_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  VISION_BILLING_WEBHOOK_SECRET: z.string().default(""),
+  VISION_STRIPE_SECRET_KEY: z.string().default(""),
+  VISION_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(10000).default(0),
+  VISION_BILLING_COUNTRIES: z
+    .string()
+    .default("US,CA,GB,AU,JP,DE,FR,NL,IE")
+    .transform((value) => value.split(",").map((item) => item.trim().toUpperCase()).filter((item) => /^[A-Z]{2}$/.test(item))),
+  VISION_BILLING_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(0),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {

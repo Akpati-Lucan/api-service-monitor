@@ -24,7 +24,9 @@ import {
 import { directoryPage, editorGate, editorPage, guidePage, learnPage, listingPage, messagePage } from "./pages.js";
 import { guideExample, listLearningGuides, presentGuide, proposeGuideRevision, reportGuide, verifyGuide } from "./learning.js";
 import { afterModeration, decideAppeal, duplicateLines, verifyDomainManual, type Mailer, type PublisherDeps } from "./publisher.js";
+import { billingAdminView, createRecordProcessor, createStripeProcessor, type BillingProcessor } from "./billing.js";
 import { mountAccounts } from "./accountHttp.js";
+import { mountBilling, staffBillingRoutes } from "./billingHttp.js";
 import { consumeRateLimit } from "./rateLimit.js";
 import type { DestinationDeps } from "./urls.js";
 import type { GuideRecord, MarketplaceStore } from "./store.js";
@@ -60,11 +62,12 @@ export interface MarketplaceDeps extends DestinationDeps {
   logger?: Logger;
   mailer?: Mailer;
   resolveTxt?: (hostname: string) => Promise<string[]>;
+  processor?: BillingProcessor;
 }
 
 export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
   if (!deps.config.VISION_MARKETPLACE_ENABLED) {
-    for (const prefix of ["/marketplace", "/vision", "/learn", "/go", "/account", "/publisher"]) {
+    for (const prefix of ["/marketplace", "/vision", "/learn", "/go", "/account", "/publisher", "/billing"]) {
       app.use(prefix, (_req, res) => {
         res.status(404).type("text/plain").send("Not found");
       });
@@ -72,19 +75,28 @@ export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
     return;
   }
   const store = deps.db.marketplace;
+  deps.processor = deps.processor ?? resolveProcessor(deps);
   app.use("/marketplace", createApiRouter(store, deps));
   app.use("/vision", createPageRouter(store, deps));
   app.use("/learn", createLearnRouter(store, deps));
   app.use("/go", createGoRouter(store, deps));
   if (!deps.config.VISION_PUBLISHER_PORTAL_ENABLED) {
-    for (const prefix of ["/account", "/publisher"]) {
+    for (const prefix of ["/account", "/publisher", "/billing"]) {
       app.use(prefix, (_req, res) => {
         res.status(404).type("text/plain").send("Not found");
       });
     }
     return;
   }
-  mountAccounts(app, deps.db.identity, store, publisherDeps(deps));
+  const accounts = publisherDeps(deps);
+  mountAccounts(app, deps.db.identity, store, accounts, deps.db.billing);
+  if (!deps.config.VISION_BILLING_ENABLED) {
+    app.use("/billing", (_req, res) => {
+      res.status(404).type("text/plain").send("Not found");
+    });
+    return;
+  }
+  mountBilling(app, deps.db.identity, store, deps.db.billing, resolveProcessor(deps), accounts, deps.logger);
 }
 
 function createApiRouter(store: MarketplaceStore, deps: MarketplaceDeps): Router {
@@ -292,6 +304,9 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
     }
   });
 
+  if (deps.config.VISION_BILLING_ENABLED && deps.config.VISION_PUBLISHER_PORTAL_ENABLED) {
+    staffBillingRoutes(router, deps.db.identity, deps.db.billing, resolveProcessor(deps), publisherDeps(deps), (token) => renderEditor(store, deps, token));
+  }
   router.post("/editor/appeals/:id/:decision", (req, res, next) => {
     try {
       const token = typeof req.body?.token === "string" ? req.body.token : "";
@@ -479,8 +494,21 @@ function renderEditor(store: MarketplaceStore, deps: MarketplaceDeps, token: str
       domains: deps.db.identity.listPendingDomains().map((domain) => ({ id: domain.id, domain: domain.domain })),
       audit: deps.db.identity.listAudit(15).map((row) => ({ action: row.action, createdAt: row.createdAt })),
       duplicates: duplicateLines(store, listings),
+      billing: deps.config.VISION_BILLING_ENABLED ? billingAdminView(deps.db.billing) : undefined,
     },
   );
+}
+
+function resolveProcessor(deps: MarketplaceDeps): BillingProcessor {
+  if (deps.processor) return deps.processor;
+  if (deps.config.VISION_STRIPE_SECRET_KEY) {
+    return createStripeProcessor({
+      secretKey: deps.config.VISION_STRIPE_SECRET_KEY,
+      webhookSecret: deps.config.VISION_BILLING_WEBHOOK_SECRET,
+      fetchImpl: deps.fetchImpl,
+    });
+  }
+  return createRecordProcessor(deps.config.VISION_BILLING_WEBHOOK_SECRET, deps.config.STATUS_BASE_URL);
 }
 
 function publisherDeps(deps: MarketplaceDeps): PublisherDeps {

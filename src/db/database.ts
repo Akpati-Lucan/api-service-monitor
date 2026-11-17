@@ -26,6 +26,7 @@ import type {
 import { DEFAULT_GROUP_ID, runMigrations } from "./migrations.js";
 import { createMarketplaceStore, type MarketplaceStore } from "../marketplace/store.js";
 import { createIdentityStore, type IdentityStore } from "../marketplace/identity.js";
+import { createBillingStore, type BillingStore } from "../marketplace/billingStore.js";
 import { seedMarketplace } from "../marketplace/seed.js";
 
 export interface DatabaseConfig {
@@ -151,6 +152,7 @@ export interface DatabaseApi {
   ping(): boolean;
   marketplace: MarketplaceStore;
   identity: IdentityStore;
+  billing: BillingStore;
 }
 
 export interface HeartbeatRow {
@@ -281,6 +283,7 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
   db.pragma("foreign_keys = ON");
   const marketplace = createMarketplaceStore(db);
   const identity = createIdentityStore(db);
+  const billing = createBillingStore(db);
 
   logger?.info({ dbPath }, "database initialized");
 
@@ -1171,6 +1174,7 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     ping,
     marketplace,
     identity,
+    billing,
   };
 }
 

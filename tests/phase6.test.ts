@@ -185,6 +185,12 @@ describe("phase 6", () => {
       VISION_STAFF_TOKEN: "",
       VISION_PUBLIC_RATE_LIMIT: 60,
       VISION_PUBLISHER_PORTAL_ENABLED: false,
+      VISION_BILLING_ENABLED: false,
+      VISION_BILLING_WEBHOOK_SECRET: "",
+      VISION_STRIPE_SECRET_KEY: "",
+      VISION_PLATFORM_FEE_BPS: 0,
+      VISION_BILLING_COUNTRIES: ["US"],
+      VISION_BILLING_GRACE_DAYS: 0,
     };
     const app = createApp({ db, config });
     const created = await request(app).post("/services").send({ name: "Payments", url: "https://example.com", intervalSeconds: 60, timeoutMs: 1000, failureThreshold: 1 });

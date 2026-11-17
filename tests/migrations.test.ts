@@ -57,13 +57,16 @@ describe("migrations", () => {
         'marketplace_listings', 'listing_links', 'listing_events', 'listing_guides', 'listing_reviews', 'listing_reports',
         'guide_revisions', 'guide_reports',
         'users', 'web_sessions', 'email_tokens', 'organizations', 'organization_members', 'organization_invitations',
-        'publisher_profiles', 'domain_verifications', 'listing_appeals', 'publisher_notifications', 'admin_audit_log'
+        'publisher_profiles', 'domain_verifications', 'listing_appeals', 'publisher_notifications', 'admin_audit_log',
+        'marketplace_offers', 'payment_accounts', 'marketplace_subscriptions', 'payment_events', 'marketplace_invoices',
+        'external_provider_notes', 'billing_preferences',
+        'checkout_attempts', 'billing_ledger', 'commerce_restrictions'
       )`,
     ).all() as Array<{ name: string }>;
     upgraded.close();
 
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(group).toEqual({ name: "Default", slug: "default" });
-    expect(tables).toHaveLength(31);
+    expect(tables).toHaveLength(41);
   });
 });

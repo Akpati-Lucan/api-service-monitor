@@ -25,7 +25,7 @@ export interface AppDependencies {
   config: AppConfig;
   logger?: Logger;
   monitor?: Monitor;
-  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl" | "mailer" | "resolveTxt">;
+  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl" | "mailer" | "resolveTxt" | "processor">;
 }
 
 export function createApp({ db, config, logger, monitor, marketplace }: AppDependencies) {
@@ -38,7 +38,14 @@ export function createApp({ db, config, logger, monitor, marketplace }: AppDepen
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
   });
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({
+    limit: "1mb",
+    verify(req, _res, buf) {
+      if ((req.url ?? "").startsWith("/billing/webhook")) {
+        (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      }
+    },
+  }));
   app.use(express.urlencoded({ extended: false }));
   app.use("/operator", express.static(path.join(process.cwd(), "public", "operator")));
 

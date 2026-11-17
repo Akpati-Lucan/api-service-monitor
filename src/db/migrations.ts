@@ -453,6 +453,143 @@ const version7SchemaSql = `
   CREATE INDEX IF NOT EXISTS idx_domains_status ON domain_verifications(status, created_at);
 `;
 
+const version8SchemaSql = `
+  CREATE TABLE IF NOT EXISTS marketplace_offers (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL REFERENCES marketplace_listings(id),
+    publisher_id TEXT NOT NULL REFERENCES organizations(id),
+    plan_name TEXT NOT NULL,
+    billing_interval TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    provider_price_ref TEXT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS payment_accounts (
+    id TEXT PRIMARY KEY,
+    publisher_id TEXT NOT NULL REFERENCES organizations(id),
+    processor TEXT NOT NULL,
+    processor_account_ref TEXT NOT NULL,
+    onboarding_state TEXT NOT NULL,
+    charges_enabled INTEGER NOT NULL,
+    payouts_enabled INTEGER NOT NULL,
+    requirements_state TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (processor, processor_account_ref)
+  );
+
+  CREATE TABLE IF NOT EXISTS marketplace_subscriptions (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    offer_id TEXT NOT NULL REFERENCES marketplace_offers(id),
+    processor TEXT NOT NULL,
+    processor_customer_ref TEXT NOT NULL,
+    processor_subscription_ref TEXT NOT NULL UNIQUE,
+    state TEXT NOT NULL,
+    period_start TEXT NULL,
+    period_end TEXT NULL,
+    cancel_at_period_end INTEGER NOT NULL,
+    canceled_at TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS payment_events (
+    id TEXT PRIMARY KEY,
+    processor TEXT NOT NULL,
+    processor_event_ref TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    processed_at TEXT NULL,
+    processing_state TEXT NOT NULL,
+    safe_error_code TEXT NULL,
+    UNIQUE (processor, processor_event_ref)
+  );
+
+  CREATE TABLE IF NOT EXISTS marketplace_invoices (
+    id TEXT PRIMARY KEY,
+    subscription_id TEXT NOT NULL REFERENCES marketplace_subscriptions(id),
+    processor_invoice_ref TEXT NOT NULL UNIQUE,
+    amount_due_minor INTEGER NOT NULL,
+    amount_paid_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    state TEXT NOT NULL,
+    hosted_invoice_url TEXT NULL,
+    period_start TEXT NULL,
+    period_end TEXT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS external_provider_notes (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    listing_id TEXT NULL REFERENCES marketplace_listings(id),
+    label TEXT NOT NULL,
+    url TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_preferences (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email_opt_in INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_offers_publisher ON marketplace_offers(publisher_id, status);
+  CREATE INDEX IF NOT EXISTS idx_subscriptions_org ON marketplace_subscriptions(organization_id, state);
+  CREATE INDEX IF NOT EXISTS idx_payment_events_state ON payment_events(processing_state, received_at);
+`;
+
+const version9SchemaSql = `
+  ALTER TABLE marketplace_subscriptions ADD COLUMN dispute_open INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE marketplace_invoices ADD COLUMN tax_minor INTEGER NOT NULL DEFAULT 0;
+
+  CREATE TABLE IF NOT EXISTS checkout_attempts (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    offer_id TEXT NOT NULL REFERENCES marketplace_offers(id),
+    idempotency_key TEXT NOT NULL,
+    country TEXT NOT NULL,
+    hosted_url TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (organization_id, idempotency_key)
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_ledger (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    publisher_id TEXT NOT NULL REFERENCES organizations(id),
+    subscription_id TEXT NULL REFERENCES marketplace_subscriptions(id),
+    processor TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    gross_minor INTEGER NOT NULL,
+    fee_minor INTEGER NOT NULL,
+    tax_minor INTEGER NOT NULL,
+    net_minor INTEGER NOT NULL,
+    payout_status TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    period TEXT NOT NULL,
+    transfer_ref TEXT NULL,
+    source_event_ref TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS commerce_restrictions (
+    publisher_id TEXT PRIMARY KEY REFERENCES organizations(id),
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_ledger_org ON billing_ledger(organization_id, period);
+  CREATE INDEX IF NOT EXISTS idx_ledger_publisher ON billing_ledger(publisher_id, period);
+`;
+
 const steps: Array<{ version: number; sql: string }> = [
   { version: 1, sql: version1SchemaSql },
   { version: 2, sql: version2SchemaSql },
@@ -461,6 +598,8 @@ const steps: Array<{ version: number; sql: string }> = [
   { version: 5, sql: version5SchemaSql },
   { version: 6, sql: version6SchemaSql },
   { version: 7, sql: version7SchemaSql },
+  { version: 8, sql: version8SchemaSql },
+  { version: 9, sql: version9SchemaSql },
 ];
 
 export function runMigrations(db: Database.Database): void {
