@@ -6,6 +6,7 @@ export type PricingModel = "free" | "freemium" | "subscription" | "usage_based" 
 export type LinkKind = "docs" | "pricing" | "signup" | "status" | "terms" | "privacy" | "support";
 export type ReviewDecision = "approve" | "changes" | "reject" | "suspend";
 export type GuideDifficulty = "beginner" | "intermediate" | "advanced";
+export type GuideKind = "quickstart" | "tutorial" | "setup" | "troubleshooting" | "glossary";
 
 export interface ListingRecord {
   id: string;
@@ -63,6 +64,45 @@ export interface GuideRecord {
   verifiedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  kind: GuideKind;
+  locale: string;
+  purpose: string;
+  setupUrl: string | null;
+  minPermissions: string;
+  credentialLocation: string;
+  localTestMd: string;
+  productionMd: string;
+  securityNotes: string;
+  costNotes: string;
+  commonErrorsMd: string;
+  cleanupMd: string;
+  docsUrl: string | null;
+  testedVersion: string;
+  testEnvironment: string;
+  compatibilityNotes: string;
+  exampleText: string;
+  successMd: string;
+  revision: number;
+}
+
+export interface GuideRevision {
+  id: string;
+  guideId: string;
+  version: number;
+  note: string;
+  author: string;
+  verifiedAt: string | null;
+  snapshotJson: string;
+  createdAt: string;
+}
+
+export interface GuideReport {
+  id: string;
+  guideId: string;
+  kind: string;
+  note: string;
+  status: string;
+  createdAt: string;
 }
 
 export interface ReviewRecord {
@@ -86,6 +126,7 @@ export interface ReportRecord {
 export interface ListingDraft {
   id: string;
   slug: string;
+  publisherId?: string | null;
   name: string;
   summary: string;
   descriptionMd: string;
@@ -122,10 +163,22 @@ export interface MarketplaceStore {
   insertEvent(input: { listingId: string; eventType: "view" | "outbound_click"; occurredAt: string; coarseReferrer: string | null }): void;
   countEvents(listingId: string, eventType: "view" | "outbound_click"): number;
   insertReview(input: Omit<ReviewRecord, "id" | "createdAt"> & { id: string; createdAt: string }): void;
+  listReviews(listingId: string): ReviewRecord[];
   latestReviewAt(listingId: string): string | null;
+  listOwnedListings(publisherId: string): ListingRecord[];
+  listGuideIdsByPublisher(publisherId: string): string[];
   insertGuide(input: GuideRecord): void;
+  updateGuide(id: string, patch: Partial<GuideRecord> & { updatedAt: string }): void;
+  getGuide(id: string): GuideRecord | undefined;
   getGuideBySlug(slug: string): GuideRecord | undefined;
   listGuides(listingId: string, publishedOnly: boolean): GuideRecord[];
+  listPublishedGuides(): GuideRecord[];
+  insertRevision(input: GuideRevision): void;
+  listRevisions(guideId: string): GuideRevision[];
+  markRevisionVerified(id: string, verifiedAt: string): void;
+  insertGuideReport(input: GuideReport): void;
+  listOpenGuideReports(): GuideReport[];
+  resolveGuideReports(guideId: string): void;
   insertReport(input: ReportRecord): void;
   listOpenReports(): ReportRecord[];
   dismissReport(id: string): void;
@@ -142,6 +195,16 @@ export function createMarketplaceStore(db: Database.Database): MarketplaceStore 
     capabilities_json as capabilitiesJson, requirements_json as requirementsJson,
     review_note as reviewNote, reviewed_by as reviewedBy, published_at as publishedAt,
     created_at as createdAt, updated_at as updatedAt
+  `;
+
+  const guideColumns = `
+    id, listing_id as listingId, slug, title, summary, body_md as bodyMd, prerequisites, difficulty,
+    published, verified_at as verifiedAt, verified_by as verifiedBy, created_at as createdAt, updated_at as updatedAt,
+    kind, locale, purpose, setup_url as setupUrl, min_permissions as minPermissions, credential_location as credentialLocation,
+    local_test_md as localTestMd, production_md as productionMd, security_notes as securityNotes, cost_notes as costNotes,
+    common_errors_md as commonErrorsMd, cleanup_md as cleanupMd, docs_url as docsUrl, tested_version as testedVersion,
+    test_environment as testEnvironment, compatibility_notes as compatibilityNotes, example_text as exampleText,
+    success_md as successMd, revision
   `;
 
   function mapListing(row: Record<string, unknown>): ListingRecord {
@@ -213,9 +276,9 @@ export function createMarketplaceStore(db: Database.Database): MarketplaceStore 
           pricing_model, currency, price_summary, provider_name, provider_domain, docs_url, signup_url, pricing_url,
           status_url, terms_url, privacy_url, regions_json, capabilities_json, requirements_json, review_note,
           reviewed_by, published_at, created_at, updated_at
-        ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
       ).run(
-        input.id, input.slug, input.name, input.summary, input.descriptionMd, input.category, JSON.stringify(input.tags),
+        input.id, input.slug, input.publisherId ?? null, input.name, input.summary, input.descriptionMd, input.category, JSON.stringify(input.tags),
         input.listingType, input.pricingModel, input.currency, input.priceSummary, input.providerName, input.providerDomain,
         input.docsUrl, input.signupUrl, input.pricingUrl, input.statusUrl, input.termsUrl, input.privacyUrl,
         JSON.stringify(input.regions), JSON.stringify(input.capabilities), JSON.stringify(input.requirements),
@@ -298,6 +361,34 @@ export function createMarketplaceStore(db: Database.Database): MarketplaceStore 
         `INSERT INTO listing_reviews (id, listing_id, reviewer_id, decision, note, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
       ).run(input.id, input.listingId, input.reviewerId, input.decision, input.note, input.createdAt);
     },
+    listReviews(listingId) {
+      const rows = db.prepare(
+        `SELECT id, listing_id as listingId, reviewer_id as reviewerId, decision, note, created_at as createdAt
+         FROM listing_reviews WHERE listing_id = ? ORDER BY created_at`,
+      ).all(listingId) as Array<Record<string, unknown>>;
+      return rows.map((row) => ({
+        id: String(row.id),
+        listingId: String(row.listingId),
+        reviewerId: String(row.reviewerId),
+        decision: row.decision as ReviewDecision,
+        note: String(row.note),
+        createdAt: String(row.createdAt),
+      }));
+    },
+    listOwnedListings(publisherId) {
+      const rows = db.prepare(
+        `SELECT ${listingColumns} FROM marketplace_listings WHERE publisher_id = ? ORDER BY name`,
+      ).all(publisherId) as Array<Record<string, unknown>>;
+      return rows.map(mapListing);
+    },
+    listGuideIdsByPublisher(publisherId) {
+      const rows = db.prepare(
+        `SELECT g.id as id FROM listing_guides g
+         INNER JOIN marketplace_listings l ON l.id = g.listing_id
+         WHERE l.publisher_id = ?`,
+      ).all(publisherId) as Array<{ id: string }>;
+      return rows.map((row) => String(row.id));
+    },
     latestReviewAt(listingId) {
       const row = db.prepare(
         `SELECT created_at as createdAt FROM listing_reviews WHERE listing_id = ? ORDER BY created_at DESC LIMIT 1`,
@@ -307,28 +398,102 @@ export function createMarketplaceStore(db: Database.Database): MarketplaceStore 
     insertGuide(input) {
       db.prepare(
         `INSERT INTO listing_guides (
-          id, listing_id, slug, title, summary, body_md, prerequisites, difficulty, published, verified_at, verified_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, listing_id, slug, title, summary, body_md, prerequisites, difficulty, published, verified_at, verified_by, created_at, updated_at,
+          kind, locale, purpose, setup_url, min_permissions, credential_location, local_test_md, production_md, security_notes, cost_notes,
+          common_errors_md, cleanup_md, docs_url, tested_version, test_environment, compatibility_notes, example_text, success_md, revision
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         input.id, input.listingId, input.slug, input.title, input.summary, input.bodyMd, input.prerequisites,
         input.difficulty, input.published ? 1 : 0, input.verifiedAt, input.verifiedBy, input.createdAt, input.updatedAt,
+        input.kind, input.locale, input.purpose, input.setupUrl, input.minPermissions, input.credentialLocation,
+        input.localTestMd, input.productionMd, input.securityNotes, input.costNotes, input.commonErrorsMd, input.cleanupMd,
+        input.docsUrl, input.testedVersion, input.testEnvironment, input.compatibilityNotes, input.exampleText, input.successMd, input.revision,
       );
     },
+    updateGuide(id, patch) {
+      const current = this.getGuide(id);
+      if (!current) return;
+      const next = { ...current, ...patch };
+      db.prepare(
+        `UPDATE listing_guides SET
+          title = ?, summary = ?, body_md = ?, prerequisites = ?, difficulty = ?, published = ?, verified_at = ?, verified_by = ?, updated_at = ?,
+          kind = ?, locale = ?, purpose = ?, setup_url = ?, min_permissions = ?, credential_location = ?, local_test_md = ?, production_md = ?,
+          security_notes = ?, cost_notes = ?, common_errors_md = ?, cleanup_md = ?, docs_url = ?, tested_version = ?, test_environment = ?,
+          compatibility_notes = ?, example_text = ?, success_md = ?, revision = ?
+         WHERE id = ?`,
+      ).run(
+        next.title, next.summary, next.bodyMd, next.prerequisites, next.difficulty, next.published ? 1 : 0, next.verifiedAt, next.verifiedBy, patch.updatedAt,
+        next.kind, next.locale, next.purpose, next.setupUrl, next.minPermissions, next.credentialLocation, next.localTestMd, next.productionMd,
+        next.securityNotes, next.costNotes, next.commonErrorsMd, next.cleanupMd, next.docsUrl, next.testedVersion, next.testEnvironment,
+        next.compatibilityNotes, next.exampleText, next.successMd, next.revision, id,
+      );
+    },
+    getGuide(id) {
+      const row = db.prepare(`SELECT ${guideColumns} FROM listing_guides WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      return row ? mapGuide(row) : undefined;
+    },
     getGuideBySlug(slug) {
-      const row = db.prepare(
-        `SELECT id, listing_id as listingId, slug, title, summary, body_md as bodyMd, prerequisites, difficulty,
-                published, verified_at as verifiedAt, verified_by as verifiedBy, created_at as createdAt, updated_at as updatedAt
-         FROM listing_guides WHERE slug = ?`,
-      ).get(slug) as Record<string, unknown> | undefined;
+      const row = db.prepare(`SELECT ${guideColumns} FROM listing_guides WHERE slug = ?`).get(slug) as Record<string, unknown> | undefined;
       return row ? mapGuide(row) : undefined;
     },
     listGuides(listingId, publishedOnly) {
       const rows = db.prepare(
-        `SELECT id, listing_id as listingId, slug, title, summary, body_md as bodyMd, prerequisites, difficulty,
-                published, verified_at as verifiedAt, verified_by as verifiedBy, created_at as createdAt, updated_at as updatedAt
-         FROM listing_guides WHERE listing_id = ? ${publishedOnly ? "AND published = 1 AND verified_at IS NOT NULL" : ""} ORDER BY title`,
+        `SELECT ${guideColumns} FROM listing_guides WHERE listing_id = ? ${publishedOnly ? "AND published = 1 AND verified_at IS NOT NULL" : ""} ORDER BY title`,
       ).all(listingId) as Array<Record<string, unknown>>;
       return rows.map(mapGuide);
+    },
+    listPublishedGuides() {
+      const rows = db.prepare(
+        `SELECT ${guideColumns} FROM listing_guides WHERE published = 1 AND verified_at IS NOT NULL ORDER BY title`,
+      ).all() as Array<Record<string, unknown>>;
+      return rows.map(mapGuide);
+    },
+    insertRevision(input) {
+      db.prepare(
+        `INSERT INTO guide_revisions (id, guide_id, version, note, author, verified_at, snapshot_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(input.id, input.guideId, input.version, input.note, input.author, input.verifiedAt, input.snapshotJson, input.createdAt);
+    },
+    markRevisionVerified(id, verifiedAt) {
+      db.prepare(`UPDATE guide_revisions SET verified_at = ? WHERE id = ?`).run(verifiedAt, id);
+    },
+    listRevisions(guideId) {
+      const rows = db.prepare(
+        `SELECT id, guide_id as guideId, version, note, author, verified_at as verifiedAt, snapshot_json as snapshotJson, created_at as createdAt
+         FROM guide_revisions WHERE guide_id = ? ORDER BY version`,
+      ).all(guideId) as Array<Record<string, unknown>>;
+      return rows.map((row) => ({
+        id: String(row.id),
+        guideId: String(row.guideId),
+        version: Number(row.version),
+        note: String(row.note),
+        author: String(row.author),
+        verifiedAt: row.verifiedAt == null ? null : String(row.verifiedAt),
+        snapshotJson: String(row.snapshotJson),
+        createdAt: String(row.createdAt),
+      }));
+    },
+    insertGuideReport(input) {
+      db.prepare(
+        `INSERT INTO guide_reports (id, guide_id, kind, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      ).run(input.id, input.guideId, input.kind, input.note, input.status, input.createdAt);
+    },
+    listOpenGuideReports() {
+      const rows = db.prepare(
+        `SELECT id, guide_id as guideId, kind, note, status, created_at as createdAt
+         FROM guide_reports WHERE status = 'open' ORDER BY created_at`,
+      ).all() as Array<Record<string, unknown>>;
+      return rows.map((row) => ({
+        id: String(row.id),
+        guideId: String(row.guideId),
+        kind: String(row.kind),
+        note: String(row.note),
+        status: String(row.status),
+        createdAt: String(row.createdAt),
+      }));
+    },
+    resolveGuideReports(guideId) {
+      db.prepare(`UPDATE guide_reports SET status = 'resolved' WHERE guide_id = ? AND status = 'open'`).run(guideId);
     },
     insertReport(input) {
       db.prepare(
@@ -368,6 +533,7 @@ function mapLink(row: Record<string, unknown>): ListingLinkRecord {
 
 function mapGuide(row: Record<string, unknown>): GuideRecord {
   const difficulty = row.difficulty === "intermediate" || row.difficulty === "advanced" ? row.difficulty : "beginner";
+  const kind = row.kind === "quickstart" || row.kind === "tutorial" || row.kind === "troubleshooting" || row.kind === "glossary" ? row.kind : "setup";
   return {
     id: String(row.id),
     listingId: row.listingId == null ? null : String(row.listingId),
@@ -375,13 +541,32 @@ function mapGuide(row: Record<string, unknown>): GuideRecord {
     title: String(row.title),
     summary: String(row.summary),
     bodyMd: String(row.bodyMd),
-    prerequisites: String(row.prerequisites),
+    prerequisites: String(row.prerequisites ?? ""),
     difficulty,
     published: Boolean(Number(row.published)),
     verifiedAt: row.verifiedAt == null ? null : String(row.verifiedAt),
     verifiedBy: row.verifiedBy == null ? null : String(row.verifiedBy),
     createdAt: String(row.createdAt),
     updatedAt: String(row.updatedAt),
+    kind,
+    locale: row.locale == null ? "en" : String(row.locale),
+    purpose: String(row.purpose ?? ""),
+    setupUrl: row.setupUrl == null ? null : String(row.setupUrl),
+    minPermissions: String(row.minPermissions ?? ""),
+    credentialLocation: String(row.credentialLocation ?? ""),
+    localTestMd: String(row.localTestMd ?? ""),
+    productionMd: String(row.productionMd ?? ""),
+    securityNotes: String(row.securityNotes ?? ""),
+    costNotes: String(row.costNotes ?? ""),
+    commonErrorsMd: String(row.commonErrorsMd ?? ""),
+    cleanupMd: String(row.cleanupMd ?? ""),
+    docsUrl: row.docsUrl == null ? null : String(row.docsUrl),
+    testedVersion: String(row.testedVersion ?? ""),
+    testEnvironment: String(row.testEnvironment ?? ""),
+    compatibilityNotes: String(row.compatibilityNotes ?? ""),
+    exampleText: String(row.exampleText ?? ""),
+    successMd: String(row.successMd ?? ""),
+    revision: Number(row.revision ?? 1),
   };
 }
 

@@ -1,15 +1,16 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import type { AppConfig } from "../types/index.js";
+import type { Logger } from "../utils/logger.js";
+import { sendSmtp } from "../alerts/smtp.js";
 import type { DatabaseApi } from "../db/database.js";
 import { AppError, notFound, unauthorized, validationError } from "../utils/errors.js";
 import {
   CATEGORIES,
   createDraft,
   getPublicBySlug,
-  getPublicGuide,
   listPublicGuides,
   metricsFor,
   openDestination,
@@ -20,10 +21,13 @@ import {
   submitListing,
   type ListingInput,
 } from "./catalog.js";
-import { directoryPage, editorGate, editorPage, guidePage, listingPage, messagePage } from "./pages.js";
+import { directoryPage, editorGate, editorPage, guidePage, learnPage, listingPage, messagePage } from "./pages.js";
+import { guideExample, listLearningGuides, presentGuide, proposeGuideRevision, reportGuide, verifyGuide } from "./learning.js";
+import { afterModeration, decideAppeal, duplicateLines, verifyDomainManual, type Mailer, type PublisherDeps } from "./publisher.js";
+import { mountAccounts } from "./accountHttp.js";
 import { consumeRateLimit } from "./rateLimit.js";
 import type { DestinationDeps } from "./urls.js";
-import type { MarketplaceStore } from "./store.js";
+import type { GuideRecord, MarketplaceStore } from "./store.js";
 
 const listingSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -53,11 +57,14 @@ const noteSchema = z.object({ note: z.string().trim().min(1).max(500) });
 export interface MarketplaceDeps extends DestinationDeps {
   db: DatabaseApi;
   config: AppConfig;
+  logger?: Logger;
+  mailer?: Mailer;
+  resolveTxt?: (hostname: string) => Promise<string[]>;
 }
 
 export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
   if (!deps.config.VISION_MARKETPLACE_ENABLED) {
-    for (const prefix of ["/marketplace", "/vision", "/learn", "/go"]) {
+    for (const prefix of ["/marketplace", "/vision", "/learn", "/go", "/account", "/publisher"]) {
       app.use(prefix, (_req, res) => {
         res.status(404).type("text/plain").send("Not found");
       });
@@ -69,6 +76,15 @@ export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
   app.use("/vision", createPageRouter(store, deps));
   app.use("/learn", createLearnRouter(store, deps));
   app.use("/go", createGoRouter(store, deps));
+  if (!deps.config.VISION_PUBLISHER_PORTAL_ENABLED) {
+    for (const prefix of ["/account", "/publisher"]) {
+      app.use(prefix, (_req, res) => {
+        res.status(404).type("text/plain").send("Not found");
+      });
+    }
+    return;
+  }
+  mountAccounts(app, deps.db.identity, store, publisherDeps(deps));
 }
 
 function createApiRouter(store: MarketplaceStore, deps: MarketplaceDeps): Router {
@@ -138,6 +154,7 @@ function createApiRouter(store: MarketplaceStore, deps: MarketplaceDeps): Router
       const parsed = noteSchema.extend({ decision: z.enum(["approve", "changes", "reject", "suspend"]) }).safeParse(req.body);
       if (!parsed.success) throw validationError("Validation failed", fieldErrors(parsed.error.flatten().fieldErrors));
       const listing = await reviewListing(store, req.params.id, parsed.data.decision, parsed.data.note, deps);
+      await afterModeration(deps.db.identity, store, publisherDeps(deps), listing.id, parsed.data.decision, parsed.data.note);
       res.json(staffView(store, listing.id));
     } catch (error) {
       next(error);
@@ -168,6 +185,35 @@ function createApiRouter(store: MarketplaceStore, deps: MarketplaceDeps): Router
     try {
       requireStaff(req, deps.config);
       res.json(store.listOpenReports());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/guides/:id/revisions", (req, res, next) => {
+    try {
+      requireStaff(req, deps.config);
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      res.status(201).json(proposeGuideRevision(store, one(req.params.id), guidePatch(req.body), note));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/guides/:id/verify", (req, res, next) => {
+    try {
+      requireStaff(req, deps.config);
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      res.json(verifyGuide(store, one(req.params.id), note));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/guide-reports", (req, res, next) => {
+    try {
+      requireStaff(req, deps.config);
+      res.json(store.listOpenGuideReports());
     } catch (error) {
       next(error);
     }
@@ -214,45 +260,84 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
       const category = typeof req.query.category === "string" ? req.query.category : "";
       const page = Number(req.query.page ?? 1);
       const result = searchPublic(store, { q, category: category || undefined, page: Number.isInteger(page) ? page : 1 });
-      sendHtml(res, 200, directoryPage({ ...result, q, category }));
+      sendHtml(res, 200, directoryPage({ ...result, q, category, portal: deps.config.VISION_PUBLISHER_PORTAL_ENABLED }));
     } catch (error) {
       next(error);
     }
   });
 
   router.get("/editor", (_req, res) => {
-    sendHtml(res, 200, editorGate());
+    sendHtml(res, 200, editorGate(deps.config.VISION_PUBLISHER_PORTAL_ENABLED));
   });
 
   router.post("/editor", (req, res, next) => {
     try {
       const token = typeof req.body?.token === "string" ? req.body.token : "";
       requireStaffToken(token, deps.config);
-      sendHtml(res, 200, renderEditor(store, token));
+      sendHtml(res, 200, renderEditor(store, deps, token));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/editor/domains/:id/verify", (req, res, next) => {
+    try {
+      const token = typeof req.body?.token === "string" ? req.body.token : "";
+      requireStaffToken(token, deps.config);
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      verifyDomainManual(deps.db.identity, one(req.params.id), note);
+      sendHtml(res, 200, renderEditor(store, deps, token));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/editor/appeals/:id/:decision", (req, res, next) => {
+    try {
+      const token = typeof req.body?.token === "string" ? req.body.token : "";
+      requireStaffToken(token, deps.config);
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      const decision = one(req.params.decision);
+      if (decision !== "upheld" && decision !== "reversed") throw validationError("Validation failed", { decision: ["unknown decision"] });
+      decideAppeal(deps.db.identity, store, one(req.params.id), decision, note);
+      sendHtml(res, 200, renderEditor(store, deps, token));
     } catch (error) {
       next(error);
     }
   });
 
   router.post("/editor/:id/publish", async (req, res, next) => {
-    await editorAction(req, res, next, store, deps, async (id, note) => {
+    await editorAction(req, res, next, store, deps, "approve", async (id, note) => {
       await reviewListing(store, id, "approve", note, deps);
     });
   });
 
   router.post("/editor/:id/suspend", async (req, res, next) => {
-    await editorAction(req, res, next, store, deps, async (id, note) => {
+    await editorAction(req, res, next, store, deps, "suspend", async (id, note) => {
       await reviewListing(store, id, "suspend", note, deps);
     });
   });
 
-  router.post("/editor/:id/retire", (req, res, next) => {
+  router.post("/editor/guides/:id/verify", (req, res, next) => {
     try {
       const token = typeof req.body?.token === "string" ? req.body.token : "";
       requireStaffToken(token, deps.config);
       const note = typeof req.body?.note === "string" ? req.body.note : "";
-      retireListing(store, req.params.id, note);
-      sendHtml(res, 200, renderEditor(store, token));
+      verifyGuide(store, one(req.params.id), note);
+      sendHtml(res, 200, renderEditor(store, deps, token));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/editor/:id/retire", async (req, res, next) => {
+    try {
+      const token = typeof req.body?.token === "string" ? req.body.token : "";
+      requireStaffToken(token, deps.config);
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      retireListing(store, one(req.params.id), note);
+      await afterModeration(deps.db.identity, store, publisherDeps(deps), one(req.params.id), "reject", note);
+      sendHtml(res, 200, renderEditor(store, deps, token));
     } catch (error) {
       next(error);
     }
@@ -262,7 +347,7 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
     try {
       const listing = getPublicBySlug(store, req.params.slug, true);
       const guides = listPublicGuides(store, listing.id).map((guide) => ({ slug: guide.slug, title: guide.title }));
-      sendHtml(res, 200, listingPage(listing, false, guides));
+      sendHtml(res, 200, listingPage(listing, false, guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -276,7 +361,7 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
       const note = typeof req.body?.note === "string" ? req.body.note : "";
       reportListing(store, listing.id, kind, note);
       const guides = listPublicGuides(store, listing.id).map((guide) => ({ slug: guide.slug, title: guide.title }));
-      sendHtml(res, 200, listingPage(getPublicBySlug(store, listing.slug, false), true, guides));
+      sendHtml(res, 200, listingPage(getPublicBySlug(store, listing.slug, false), true, guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -288,11 +373,48 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
 
 function createLearnRouter(store: MarketplaceStore, deps: MarketplaceDeps): Router {
   const router = Router();
+  router.get("/", (req, res, next) => {
+    try {
+      assertRate(req, deps.config);
+      const guides = listLearningGuides(store).map((guide) => ({
+        slug: guide.slug,
+        title: guide.title,
+        summary: guide.summary,
+        kind: guide.kind,
+        difficulty: guide.difficulty,
+      }));
+      sendHtml(res, 200, learnPage(guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED));
+    } catch (error) {
+      next(error);
+    }
+  });
+  router.get("/:slug/example.txt", (req, res, next) => {
+    try {
+      const slug = one(req.params.slug);
+      const example = guideExample(store, slug);
+      res.status(200).type("text/plain").setHeader("Content-Disposition", `attachment; filename="${slug}.txt"`).send(example);
+    } catch (error) {
+      next(error);
+    }
+  });
   router.get("/:slug", (req, res, next) => {
     try {
       assertRate(req, deps.config);
-      const guide = getPublicGuide(store, req.params.slug);
-      sendHtml(res, 200, guidePage(guide));
+      const presented = presentGuide(store, one(req.params.slug));
+      const nonce = randomBytes(16).toString("hex");
+      sendHtml(res, 200, guidePage({ ...presented.guide, ...presented }, nonce, deps.config.VISION_PUBLISHER_PORTAL_ENABLED), nonce);
+    } catch (error) {
+      next(error);
+    }
+  });
+  router.post("/:slug/reports", (req, res, next) => {
+    try {
+      const kind = typeof req.body?.kind === "string" ? req.body.kind : "";
+      const note = typeof req.body?.note === "string" ? req.body.note : "";
+      reportGuide(store, one(req.params.slug), kind, note);
+      const presented = presentGuide(store, one(req.params.slug));
+      const nonce = randomBytes(16).toString("hex");
+      sendHtml(res, 200, `${guidePage({ ...presented.guide, ...presented }, nonce, deps.config.VISION_PUBLISHER_PORTAL_ENABLED)}`.replace("</h1>", "</h1><p>Report received. A reviewer will check it before the guide is marked current.</p>"), nonce);
     } catch (error) {
       next(error);
     }
@@ -323,6 +445,7 @@ async function editorAction(
   next: (error: unknown) => void,
   store: MarketplaceStore,
   deps: MarketplaceDeps,
+  decision: string,
   action: (id: string, note: string) => Promise<void>,
 ) {
   try {
@@ -331,19 +454,49 @@ async function editorAction(
     const note = typeof req.body?.note === "string" ? req.body.note : "";
     const id = Array.isArray(req.params.id) ? req.params.id[0] ?? "" : req.params.id;
     await action(id, note);
-    sendHtml(res, 200, renderEditor(store, token));
+    await afterModeration(deps.db.identity, store, publisherDeps(deps), id, decision, note);
+    sendHtml(res, 200, renderEditor(store, deps, token));
   } catch (error) {
     next(error);
   }
 }
 
-function renderEditor(store: MarketplaceStore, token: string): string {
+function renderEditor(store: MarketplaceStore, deps: MarketplaceDeps, token: string): string {
   const listings = store.listListings({
     statuses: ["draft", "submitted", "changes_requested", "published", "suspended", "archived"],
     limit: 100,
     offset: 0,
   });
-  return editorPage(token, listings, store.listOpenReports());
+  return editorPage(
+    token,
+    listings,
+    store.listOpenReports(),
+    store.listPublishedGuides().map((guide) => ({ id: guide.id, title: guide.title, slug: guide.slug })),
+    store.listOpenGuideReports(),
+    {
+      portal: deps.config.VISION_PUBLISHER_PORTAL_ENABLED,
+      appeals: deps.db.identity.listOpenAppeals().map((appeal) => ({ id: appeal.id, note: appeal.note })),
+      domains: deps.db.identity.listPendingDomains().map((domain) => ({ id: domain.id, domain: domain.domain })),
+      audit: deps.db.identity.listAudit(15).map((row) => ({ action: row.action, createdAt: row.createdAt })),
+      duplicates: duplicateLines(store, listings),
+    },
+  );
+}
+
+function publisherDeps(deps: MarketplaceDeps): PublisherDeps {
+  return {
+    config: deps.config,
+    resolveHost: deps.resolveHost,
+    fetchImpl: deps.fetchImpl,
+    resolveTxt: deps.resolveTxt,
+    mailer: deps.mailer ?? (async (message) => {
+      if (deps.config.SMTP_URL && deps.config.SMTP_FROM) {
+        await sendSmtp({ smtpUrl: deps.config.SMTP_URL, from: deps.config.SMTP_FROM, to: [message.to], subject: message.subject, text: message.text });
+        return;
+      }
+      deps.logger?.info({ to: message.to, subject: message.subject, text: message.text }, "account mail kept locally because SMTP_URL is empty");
+    }),
+  };
 }
 
 function staffView(store: MarketplaceStore, id: string) {
@@ -392,8 +545,29 @@ function htmlErrors(error: unknown, _req: Request, res: Response, next: (error: 
   sendHtml(res, page.status, page.html);
 }
 
-function sendHtml(res: Response, status: number, html: string): void {
-  res.status(status).type("html").setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'").send(html);
+function sendHtml(res: Response, status: number, html: string, nonce = ""): void {
+  const script = nonce ? `script-src 'nonce-${nonce}'` : "script-src 'none'";
+  res.status(status).type("html").setHeader("Content-Security-Policy", `default-src 'none'; style-src 'unsafe-inline'; ${script}; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`).send(html);
+}
+
+function one(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+const guideFields = [
+  "title", "summary", "bodyMd", "prerequisites", "purpose", "minPermissions", "credentialLocation",
+  "localTestMd", "productionMd", "securityNotes", "costNotes", "commonErrorsMd", "cleanupMd",
+  "testedVersion", "testEnvironment", "compatibilityNotes", "exampleText", "successMd",
+] as const;
+
+function guidePatch(body: unknown): Partial<GuideRecord> {
+  if (!body || typeof body !== "object") return {};
+  const source = body as Record<string, unknown>;
+  const patch: Partial<GuideRecord> = {};
+  for (const key of guideFields) {
+    if (typeof source[key] === "string") patch[key] = source[key];
+  }
+  return patch;
 }
 
 function fieldErrors(value: Record<string, string[] | undefined>): Record<string, string[]> {

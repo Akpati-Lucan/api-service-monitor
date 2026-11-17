@@ -25,7 +25,7 @@ export interface AppDependencies {
   config: AppConfig;
   logger?: Logger;
   monitor?: Monitor;
-  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl">;
+  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl" | "mailer" | "resolveTxt">;
 }
 
 export function createApp({ db, config, logger, monitor, marketplace }: AppDependencies) {
@@ -45,7 +45,7 @@ export function createApp({ db, config, logger, monitor, marketplace }: AppDepen
   app.use("/health", createHealthRouter({ db, monitor, logger: appLogger }));
   app.use("/status", createPublicStatusRouter({ db, config }));
   app.use("/heartbeats", createHeartbeatsRouter({ db }));
-  mountMarketplace(app, { db, config, ...marketplace });
+  mountMarketplace(app, { db, config, logger: appLogger, ...marketplace });
   app.use(createAuthMiddleware({ db, config }));
   app.use("/services", createServicesRouter({ db, config, monitor, logger: appLogger }));
   app.use("/groups", createGroupsRouter({ db }));

@@ -38,6 +38,10 @@ export const configSchema = z.object({
     .transform((value) => value === "true" || value === "1"),
   VISION_STAFF_TOKEN: z.string().default(""),
   VISION_PUBLIC_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(60),
+  VISION_PUBLISHER_PORTAL_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {

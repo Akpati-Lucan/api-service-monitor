@@ -88,13 +88,28 @@ const linkLabels: Record<string, string> = {
   privacy: "Privacy",
 };
 
-export async function createDraft(store: MarketplaceStore, input: ListingInput, deps: DestinationDeps, now = new Date()): Promise<ListingRecord> {
+export async function applyListingUpdate(store: MarketplaceStore, id: string, input: ListingInput, deps: DestinationDeps, now = new Date()): Promise<ListingRecord> {
+  const current = required(store, id);
+  const verified = await verifyListingUrls(input, deps);
+  const republish = current.status === "published";
+  store.updateListing(id, {
+    ...verified,
+    status: republish ? "draft" : current.status,
+    publishedAt: republish ? null : current.publishedAt,
+    updatedAt: now.toISOString(),
+  });
+  store.replaceLinks(id, linksFrom(verified));
+  return required(store, id);
+}
+
+export async function createDraft(store: MarketplaceStore, input: ListingInput, deps: DestinationDeps, now = new Date(), publisherId: string | null = null): Promise<ListingRecord> {
   const verified = await verifyListingUrls(input, deps);
   const slug = uniqueSlug(store, slugify(input.name));
   const listing = store.insertListing({
     id: randomUUID(),
     slug,
     ...verified,
+    publisherId,
     createdAt: now.toISOString(),
   });
   store.replaceLinks(listing.id, linksFrom(verified));

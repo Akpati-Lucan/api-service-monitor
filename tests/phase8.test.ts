@@ -35,6 +35,7 @@ const config: AppConfig = {
   VISION_MARKETPLACE_ENABLED: true,
   VISION_STAFF_TOKEN: "staff-token",
   VISION_PUBLIC_RATE_LIMIT: 60,
+  VISION_PUBLISHER_PORTAL_ENABLED: false,
   VERSION: "1.0.0",
 };
 
@@ -79,8 +80,8 @@ describe("phase 8", () => {
     expect(guide.text).toContain("Verified by vision-editorial");
     expect(guide.text).toContain("No Vision API credential is required.");
     expect(guide.text).toContain("YOUR_API_KEY");
-    expect(guide.text).toContain("&lt;script&gt;");
-    expect(guide.text).not.toContain("<script>");
+    expect(guide.text).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(guide.text).not.toContain("<script>alert");
 
     const gone = await request(app)
       .get("/go/lst_northwind_payments/lnk_payments_docs")

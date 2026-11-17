@@ -184,6 +184,7 @@ describe("phase 6", () => {
       VISION_MARKETPLACE_ENABLED: false,
       VISION_STAFF_TOKEN: "",
       VISION_PUBLIC_RATE_LIMIT: 60,
+      VISION_PUBLISHER_PORTAL_ENABLED: false,
     };
     const app = createApp({ db, config });
     const created = await request(app).post("/services").send({ name: "Payments", url: "https://example.com", intervalSeconds: 60, timeoutMs: 1000, failureThreshold: 1 });

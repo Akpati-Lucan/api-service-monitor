@@ -156,6 +156,7 @@ export interface AppConfig {
   VISION_MARKETPLACE_ENABLED: boolean;
   VISION_STAFF_TOKEN: string;
   VISION_PUBLIC_RATE_LIMIT: number;
+  VISION_PUBLISHER_PORTAL_ENABLED: boolean;
   VERSION?: string;
 }
 

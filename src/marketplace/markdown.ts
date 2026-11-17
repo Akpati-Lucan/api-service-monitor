@@ -1,4 +1,6 @@
-export function renderMarkdown(source: string): string {
+import { findSecrets } from "./secrets.js";
+
+export function renderMarkdown(source: string, options?: { allowCopy?: boolean }): string {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
   let index = 0;
@@ -12,7 +14,14 @@ export function renderMarkdown(source: string): string {
         index += 1;
       }
       if (index < lines.length) index += 1;
-      html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      const text = code.join("\n");
+      if (findSecrets(text).length > 0) {
+        html.push(`<p class="note">This example was withheld because it contained a credential.</p>`);
+      } else if (options?.allowCopy) {
+        html.push(`<pre><code>${escapeHtml(text)}</code></pre><button type="button" data-copy>Copy example</button>`);
+      } else {
+        html.push(`<pre><code>${escapeHtml(text)}</code></pre>`);
+      }
       continue;
     }
     if (line.startsWith("### ")) {

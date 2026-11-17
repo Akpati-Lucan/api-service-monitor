@@ -25,6 +25,7 @@ import type {
 } from "../types/index.js";
 import { DEFAULT_GROUP_ID, runMigrations } from "./migrations.js";
 import { createMarketplaceStore, type MarketplaceStore } from "../marketplace/store.js";
+import { createIdentityStore, type IdentityStore } from "../marketplace/identity.js";
 import { seedMarketplace } from "../marketplace/seed.js";
 
 export interface DatabaseConfig {
@@ -149,6 +150,7 @@ export interface DatabaseApi {
   listVerifiedSubscriberEmails(serviceId: string): string[];
   ping(): boolean;
   marketplace: MarketplaceStore;
+  identity: IdentityStore;
 }
 
 export interface HeartbeatRow {
@@ -276,7 +278,9 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
+  db.pragma("foreign_keys = ON");
   const marketplace = createMarketplaceStore(db);
+  const identity = createIdentityStore(db);
 
   logger?.info({ dbPath }, "database initialized");
 
@@ -1166,6 +1170,7 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     listVerifiedSubscriberEmails,
     ping,
     marketplace,
+    identity,
   };
 }
 

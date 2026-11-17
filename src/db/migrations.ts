@@ -283,12 +283,184 @@ const version5SchemaSql = `
   CREATE INDEX IF NOT EXISTS idx_listing_reports_status ON listing_reports(status, created_at);
 `;
 
+const version6SchemaSql = `
+  ALTER TABLE listing_guides ADD COLUMN kind TEXT NOT NULL DEFAULT 'setup';
+  ALTER TABLE listing_guides ADD COLUMN locale TEXT NOT NULL DEFAULT 'en';
+  ALTER TABLE listing_guides ADD COLUMN purpose TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN setup_url TEXT NULL;
+  ALTER TABLE listing_guides ADD COLUMN min_permissions TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN credential_location TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN local_test_md TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN production_md TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN security_notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN cost_notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN common_errors_md TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN cleanup_md TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN docs_url TEXT NULL;
+  ALTER TABLE listing_guides ADD COLUMN tested_version TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN test_environment TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN compatibility_notes TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN example_text TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN success_md TEXT NOT NULL DEFAULT '';
+  ALTER TABLE listing_guides ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+
+  CREATE TABLE IF NOT EXISTS guide_revisions (
+    id TEXT PRIMARY KEY,
+    guide_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    note TEXT NOT NULL,
+    author TEXT NOT NULL,
+    verified_at TEXT NULL,
+    snapshot_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (guide_id, version)
+  );
+
+  CREATE TABLE IF NOT EXISTS guide_reports (
+    id TEXT PRIMARY KEY,
+    guide_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_guide_reports_status ON guide_reports(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_guide_revisions_guide ON guide_revisions(guide_id, version);
+`;
+
+const version7SchemaSql = `
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    email_verified_at TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS web_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    csrf_token TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS email_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    purpose TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS organization_members (
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS organization_invitations (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    invited_by TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    accepted_at TEXT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS publisher_profiles (
+    organization_id TEXT PRIMARY KEY REFERENCES organizations(id),
+    legal_name TEXT NOT NULL,
+    support_url TEXT NOT NULL,
+    privacy_url TEXT NOT NULL,
+    terms_url TEXT NOT NULL,
+    regions_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS domain_verifications (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    domain TEXT NOT NULL,
+    method TEXT NOT NULL,
+    token TEXT NOT NULL,
+    status TEXT NOT NULL,
+    evidence TEXT NOT NULL DEFAULT '',
+    reviewed_by TEXT NULL,
+    created_at TEXT NOT NULL,
+    verified_at TEXT NULL,
+    UNIQUE (organization_id, domain)
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_appeals (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL REFERENCES marketplace_listings(id),
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    note TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    decided_at TEXT NULL,
+    decided_by TEXT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS publisher_notifications (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    listing_id TEXT NULL,
+    kind TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id TEXT PRIMARY KEY,
+    actor_kind TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    organization_id TEXT NULL,
+    detail_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON web_sessions(user_id, expires_at);
+  CREATE INDEX IF NOT EXISTS idx_members_user ON organization_members(user_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_created ON admin_audit_log(created_at);
+  CREATE INDEX IF NOT EXISTS idx_domains_status ON domain_verifications(status, created_at);
+`;
+
 const steps: Array<{ version: number; sql: string }> = [
   { version: 1, sql: version1SchemaSql },
   { version: 2, sql: version2SchemaSql },
   { version: 3, sql: version3SchemaSql },
   { version: 4, sql: version4SchemaSql },
   { version: 5, sql: version5SchemaSql },
+  { version: 6, sql: version6SchemaSql },
+  { version: 7, sql: version7SchemaSql },
 ];
 
 export function runMigrations(db: Database.Database): void {
