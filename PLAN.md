@@ -1271,3 +1271,611 @@ Explicitly not in this build
 - [ ] Microsoft Search probe
 - [ ] MCP tools that exec into pods or apply manifests
 - [ ] Probe queries other than the fixed health signal for that kind
+
+---
+
+# Post-MVP product roadmap: Vision API
+
+Everything below this heading is post-MVP. It must not delay the monitoring MVP described above. Do not begin marketplace implementation until the MVP release gate in section 22 is signed off and the released monitor has been operated successfully.
+
+## 22. Product direction and release gate
+
+### 22.1 Product name and promise
+
+**Vision API** is the proposed product and marketplace name. It begins as a curated directory that helps developers discover APIs and plugins, understand how to evaluate them, and follow reliable setup guides. Over time it can support purchases and subscriptions through the platform, then add integrations that connect the customer's account to an external API.
+
+Keep the responsibilities of the product clear:
+
+- The existing API service monitor monitors endpoints and dependencies selected by a customer.
+- Vision API helps a customer discover API products, plugins, and learning material.
+- In the first release, Vision API links to the provider's own sign-up, pricing, documentation, or checkout pages. Vision API does not collect money for those providers, claim a subscription exists, or proxy API traffic.
+- In a later commerce release, Vision API may sell a provider's subscription as a platform marketplace. This requires provider onboarding, payment processing, subscription lifecycle handling, refunds, disputes, and payout reconciliation.
+- In a still later integration release, Vision API may provision or broker API access. This is a separate security-sensitive product layer with customer authorization, credential isolation, usage controls, and provider-specific adapters.
+
+Use one product identity across the web interface, docs, and marketplace. Keep the existing monitor REST API stable. Implement marketplace features as modules and separate tables/routes so the monitor remains useful if marketplace functionality is disabled.
+
+### 22.2 MVP must ship first
+
+The post-MVP roadmap starts only after all of the following are true:
+
+- The MVP scope is written down and frozen for the release. The release owner identifies which earlier plan phases form that scope; do not infer that every future probe engine is an MVP blocker.
+- The selected MVP scope is implemented, its acceptance tests pass, `npm test` and `npm run build` pass, and the documented install and upgrade path works from a clean environment.
+- A user can install the monitor, create a monitor, see current status, have an incident open and resolve correctly, and receive the promised MVP notifications/status output.
+- The release has been deployed and observed in a real environment long enough to exercise restart, database backup/restore, and graceful shutdown procedures.
+- There are no known release-blocking data-loss, secret-exposure, or cross-account authorization defects.
+- The project has a tagged release and an operator-facing upgrade/rollback note.
+
+If the MVP is limited to phases 0–3, later probe catalog and phone work in phases 4–7 remain separate roadmap work. The Vision API roadmap still waits for the declared MVP release gate, not for every optional integration in the original long-term plan.
+
+### 22.3 Product principles
+
+- Launch discovery before commerce. Validate that users find useful services before accepting money or promising access.
+- Keep a listing distinct from a connected integration. A listing can be published with a link; an integration needs a tested adapter and explicit permissions.
+- Clearly identify the provider. Show who operates the API, where data is processed, the provider's terms/privacy policy, pricing source, and support route.
+- Never claim a provider is vetted, secure, available, or compatible unless the product has a defined review process and evidence.
+- Use provider-hosted checkout and onboarding where possible. Vision API must not store card data.
+- Keep the billing provider behind an adapter so the app's subscription state does not depend on provider-specific payload shapes.
+- Do not put API credentials, payment secrets, or full webhook payloads in public listings, SQLite rows, logs, analytics, or MCP results.
+- Marketplace access is opt-in and feature-flagged. Existing monitor-only users can continue without creating a marketplace account.
+
+## 23. Product roles and user journeys
+
+### 23.1 Roles
+
+| Role | Capabilities |
+|---|---|
+| Visitor | Browse published listings and public guides; follow provider links. |
+| Customer | Save listings, manage Vision API account, view any Vision API purchases/subscriptions, and later authorize integrations. |
+| Developer/publisher | Create a publisher profile, submit API/plugin listings, manage listing links and documentation, and later connect a billing account or integration. |
+| Reviewer/editor | Review, request changes, publish, suspend, and retire listings; edit or approve learning content. |
+| Platform administrator | Manage marketplace configuration, reports, moderation, disputes/escalations, and provider integrations. Access is audited. |
+
+The MVP's existing API-key roles are not automatically marketplace user roles. Add user authentication and organization membership explicitly in the post-MVP identity phase. Do not treat an API key as a browser login session.
+
+### 23.2 Customer journey: discovery first
+
+1. Browse by category, use case, provider, supported platform, pricing model, and maturity.
+2. Open a listing that explains what it does, what it costs according to the provider's source, what the customer needs before setup, and the exact external links.
+3. Read an installation or use guide, with tested steps, code examples, required permissions, and troubleshooting.
+4. Click the provider link. Record a privacy-safe outbound click event with listing id and destination id; do not append customer email or monitor credentials to the URL.
+5. Optionally save the listing to a personal or team collection.
+6. Return to Vision API to mark the service as adopted or add a monitor manually. In this stage, do not imply automatic provisioning or subscription status.
+
+### 23.3 Publisher journey
+
+1. Create a publisher account and verify email.
+2. Submit organization identity, support/contact links, ownership evidence for the API domain, and requested categories.
+3. Create a draft listing with API name, summary, use cases, capabilities, pricing model, supported regions/platforms, prerequisites, uptime/status links, documentation, terms, privacy policy, and external signup/pricing links.
+4. Preview the listing and submit it for review.
+5. Reviewer checks link ownership and behavior, required disclosures, guide accuracy, prohibited content, and duplicate/impersonation risk.
+6. Reviewer publishes, requests changes, rejects with a reason, or suspends the listing. Every state change is audited.
+7. Publisher updates pricing/source URLs and documentation. Material changes re-enter review.
+8. In the later commerce stage, complete payment-provider onboarding before a paid offer can be activated.
+
+## 24. Release sequence after the MVP
+
+These become new roadmap phases after section 21, not amendments to the monitor MVP phases. Each phase has a feature flag and an independent rollback path.
+
+### Phase 8. Discovery foundation and Vision API branding
+
+Goal: ship a useful directory of curated external API/plugin links without taking payment or connecting provider credentials.
+
+Scope:
+
+- Establish Vision API naming, navigation, categories, typography/color tokens, and URLs. Keep monitoring screens recognizable and do not rename stable API routes.
+- Add a public directory page with search, category filters, paging, empty state, and an explicit "external provider" label.
+- Add listing detail pages and provider actions: documentation, pricing, signup, status page, terms, and privacy links.
+- Add a minimal editorial workflow: draft, submitted, changes requested, approved, published, suspended, archived.
+- Begin with curated listings maintained by an administrator. Publisher self-service is not required in this phase.
+- Add listing feedback/report link and a moderation queue. Do not add public star ratings until there is a useful abuse/moderation policy.
+- Add privacy-safe outbound click counting and aggregate listing analytics. Do not build individual user tracking profiles.
+- Add accessibility, mobile responsive layout, metadata/SEO, and a clear notice that external links leave Vision API.
+- Add categories by customer task, such as payments, identity, messaging, storage, observability, AI, data, and developer tooling.
+- Listing statuses are visible and truthful: `published`, `temporarily_unavailable`, `under_review`, `retired`.
+
+Data model, introduced through versioned migrations:
+
+```text
+marketplace_listings
+  id TEXT PRIMARY KEY
+  slug TEXT UNIQUE NOT NULL
+  publisher_id TEXT NULL             # null for platform-curated seed listings
+  name TEXT NOT NULL
+  summary TEXT NOT NULL
+  description_md TEXT NOT NULL
+  category TEXT NOT NULL
+  tags_json TEXT NOT NULL
+  listing_type TEXT NOT NULL          # api | plugin | service
+  status TEXT NOT NULL                # draft | submitted | changes_requested | published | suspended | archived
+  pricing_model TEXT NOT NULL         # free | freemium | subscription | usage_based | quote | external
+  currency TEXT NULL
+  price_summary TEXT NULL             # human-readable; not a billing source of truth
+  provider_name TEXT NOT NULL
+  provider_domain TEXT NOT NULL
+  docs_url TEXT NOT NULL
+  signup_url TEXT NULL
+  pricing_url TEXT NULL
+  status_url TEXT NULL
+  terms_url TEXT NOT NULL
+  privacy_url TEXT NOT NULL
+  regions_json TEXT NOT NULL
+  capabilities_json TEXT NOT NULL
+  requirements_json TEXT NOT NULL
+  review_note TEXT NULL               # internal; never public
+  reviewed_by TEXT NULL
+  published_at TEXT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+
+listing_links
+  id TEXT PRIMARY KEY
+  listing_id TEXT NOT NULL
+  label TEXT NOT NULL
+  url TEXT NOT NULL
+  kind TEXT NOT NULL                  # docs | pricing | signup | status | terms | privacy | support
+  sort_order INTEGER NOT NULL
+  enabled INTEGER NOT NULL
+
+listing_events
+  id INTEGER PRIMARY KEY
+  listing_id TEXT NOT NULL
+  event_type TEXT NOT NULL            # view | outbound_click | save
+  occurred_at TEXT NOT NULL
+  coarse_referrer TEXT NULL           # allowlisted host only; no full URL/query string
+  visitor_key_hash TEXT NULL          # optional rotating, salted aggregate key; omit if not essential
+
+listing_guides
+  id TEXT PRIMARY KEY
+  listing_id TEXT NULL                # null for general guides
+  slug TEXT UNIQUE NOT NULL
+  title TEXT NOT NULL
+  summary TEXT NOT NULL
+  body_md TEXT NOT NULL
+  difficulty TEXT NOT NULL            # beginner | intermediate | advanced
+  published INTEGER NOT NULL
+  verified_at TEXT NULL
+  verified_by TEXT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+
+listing_reviews
+  id TEXT PRIMARY KEY
+  listing_id TEXT NOT NULL
+  reviewer_id TEXT NOT NULL
+  decision TEXT NOT NULL              # approve | changes | reject | suspend
+  note TEXT NOT NULL
+  created_at TEXT NOT NULL
+```
+
+Constraints and operations:
+
+- Validate HTTP(S), reject localhost/private-network URLs, credentials in URLs, unsupported protocols, and redirect chains that end at private addresses. Revalidate destinations when opening redirects to reduce link abuse.
+- Use a controlled redirect route such as `/go/:listingId/:linkId`; allow only a stored, reviewed destination. Do not accept an arbitrary `?url=` parameter.
+- Sanitize Markdown. No raw scripts, iframes, or untrusted HTML in descriptions or guides.
+- Seed listings via a reviewed seed file or migration with source URLs and a last-checked date. Never scrape provider pages without permission.
+- Do not promise API quality from a directory listing. Link provider status and terms and show when Vision API last reviewed the listing.
+- Keep this module disabled or read-only until authentication and admin review permissions are ready.
+
+Acceptance criteria:
+
+- A visitor can find a listing and open a verified provider destination on desktop and mobile.
+- A malformed or private-network destination cannot be published or used as a redirect.
+- An editor can preview, publish, suspend, and retire a listing; the public directory reflects the status immediately.
+- A published guide has attribution, last verified date, tested prerequisites, and safe copyable code blocks.
+- Monitor APIs and the monitor scheduler continue to work with marketplace routes disabled.
+
+### Phase 9. Learning center and adoption workflow
+
+Goal: teach users how to evaluate, install, and use services while clearly separating educational instructions from automated integrations.
+
+Scope:
+
+- Build a learning center with beginner-to-advanced tutorials, glossary, quickstarts, provider-specific setup, and troubleshooting.
+- Every provider guide includes: purpose, prerequisites, account setup link, minimum permissions, where credentials are created, local test instructions, production configuration, security notes, cost caveats, common errors, cleanup/disable steps, and links to official docs.
+- Show tested version/provider date, test environment, author/reviewer, and compatibility notes. Flag guides that have not been verified recently.
+- Use placeholders such as `YOUR_API_KEY`; never paste working credentials into screenshots, examples, test fixtures, or analytics.
+- Offer copy buttons and downloadable examples only after secret scanning and linting. Keep examples in a versioned repository/package where possible.
+- For monitor adoption, provide a generated example that creates the matching monitor manually through the current REST API or UI. Keep the operation read-only by default and require the user's own API key locally.
+- Add tutorials for how to monitor the provider endpoint and distinguish provider failure from an owned service failure.
+- Add report-an-error and stale-guide workflow. Reviewer verifies material changes before marking the guide current.
+- Support content version history, localization-ready strings, and accessible code snippets.
+
+Acceptance criteria:
+
+- A new user can follow one guide using a provider sandbox/test account and reach a verified success state.
+- Every guide has a review date, source links, no real credentials, and a rollback/cleanup section.
+- Guide examples do not post user secrets to Vision API.
+
+### Phase 10. Accounts, organizations, and publisher portal
+
+Goal: let customers and API developers manage their own data with access boundaries.
+
+Identity and authorization:
+
+- Add browser user sessions with secure, HTTP-only, SameSite cookies; CSRF protection for state-changing browser requests; password reset and email verification, or a selected OIDC provider.
+- Add `users`, `organizations`, `organization_members`, `publisher_profiles`, and invitations with roles `owner`, `admin`, `editor`, `billing`, and `viewer`.
+- Make tenant ownership explicit in every customer-owned row and every query. Add tests proving organization A cannot read, update, or infer organization B records.
+- Keep platform staff access separate, audited, and minimal.
+- Add account export/deletion and retention rules before collecting broad profile information.
+
+Publisher portal:
+
+- Listing CRUD and preview, submission, review feedback, status history, link validation, guide attachment, and change notifications.
+- Publisher ownership verification: verify a domain via DNS TXT or a file/token endpoint, plus a manual review fallback. Do not grant a listing ownership based only on an email address.
+- Profile includes legal/business name, support URL, privacy/terms, regions served, and payment contact details only when commerce is enabled.
+- Moderation tools support reports, duplicate detection, suspension reason, appeal state, and audit history.
+- No provider credentials are requested in this phase.
+
+Database additions: users, sessions/identity references, organizations, organization_members, invitations, publisher_profiles, listing ownership/audit records, and an append-only administrative audit log. Add foreign keys and unique constraints; never reuse `group_id` as marketplace organization identity.
+
+Acceptance criteria:
+
+- Publisher can submit and edit only owned listings.
+- Reviewer can process submissions but cannot read customer secrets.
+- Tenant isolation tests cover all listing, guide, and billing-related query functions as they are introduced.
+- Role changes and moderation decisions are auditable.
+
+### Phase 11. Billing visibility for Vision API subscriptions
+
+Goal: show the customer's Vision API marketplace subscriptions and billing state. This is distinct from monitoring external APIs and from any subscription the customer has directly with an external provider.
+
+Clarify the two billing domains in all UI and schema names:
+
+1. **Vision API marketplace purchase:** a subscription purchased through Vision API. This is authoritative in the platform's payment provider and mirrored locally from signed events.
+2. **External provider subscription:** a subscription the customer has with a third-party API outside Vision API. Initially show only a user-entered link/note or a provider link; never report its status as verified unless a supported provider integration checks it.
+
+Scope:
+
+- Add a billing page with current subscriptions, provider/listing, plan label, amount/currency, next renewal if known, lifecycle state, invoice/receipt links, cancellation/manage link, and payment issue help.
+- Show clear states: `trialing`, `active`, `past_due`, `canceling`, `canceled`, `incomplete`, `unknown`. The local state is a projection; verify against the provider event stream and periodic reconciliation.
+- Add a billing adapter interface (`createCheckout`, `createPortalSession`, `verifyWebhook`, `fetchSubscription`, `refund` only when approved). Keep provider identifiers in a provider mapping table and never leak them publicly.
+- For a first processor, evaluate Stripe Connect for marketplace transactions. Provider onboarding and funds flow must be selected before coding. A plain hosted pricing table is not sufficient for a platform fee/marketplace flow; Stripe documents subscription Connect fees and transfers separately. See [Stripe subscription Connect fields](https://docs.stripe.com/api/subscriptions/update) and [Stripe subscription management](https://docs.stripe.com/api/subscriptions).
+- Keep a standalone billing adapter, normalize webhook events, verify signatures, store provider event IDs under a unique constraint, make event handlers idempotent, and recover from out-of-order delivery with fetch/reconciliation.
+- Use provider-hosted checkout and customer portal where supported. The platform must not see or store card numbers or security codes.
+- Store money as integer minor units plus ISO currency. Do not use floating-point arithmetic.
+- Show the source and timestamp for next renewal; if the provider does not supply it, omit it rather than calculate a misleading value.
+- Do not mirror card details, bank account data, full invoices, or raw payment webhook bodies into app logs.
+- Build admin reconciliation view for subscription count/status mismatches and failed webhook processing.
+- Add billing emails/notifications only with customer preferences and verified addresses.
+
+Suggested schema:
+
+```text
+marketplace_offers
+  id TEXT PRIMARY KEY
+  listing_id TEXT NOT NULL
+  publisher_id TEXT NOT NULL
+  plan_name TEXT NOT NULL
+  billing_interval TEXT NOT NULL        # month | year | usage (only when supported)
+  amount_minor INTEGER NOT NULL
+  currency TEXT NOT NULL
+  provider_price_ref TEXT NULL
+  status TEXT NOT NULL                  # draft | active | retired
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+
+payment_accounts
+  id TEXT PRIMARY KEY
+  publisher_id TEXT NOT NULL
+  processor TEXT NOT NULL
+  processor_account_ref TEXT NOT NULL
+  onboarding_state TEXT NOT NULL
+  charges_enabled INTEGER NOT NULL
+  payouts_enabled INTEGER NOT NULL
+  requirements_state TEXT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+
+marketplace_subscriptions
+  id TEXT PRIMARY KEY
+  organization_id TEXT NOT NULL
+  offer_id TEXT NOT NULL
+  processor TEXT NOT NULL
+  processor_customer_ref TEXT NOT NULL
+  processor_subscription_ref TEXT NOT NULL UNIQUE
+  state TEXT NOT NULL
+  period_start TEXT NULL
+  period_end TEXT NULL
+  cancel_at_period_end INTEGER NOT NULL
+  canceled_at TEXT NULL
+  created_at TEXT NOT NULL
+  updated_at TEXT NOT NULL
+
+payment_events
+  id TEXT PRIMARY KEY
+  processor TEXT NOT NULL
+  processor_event_ref TEXT NOT NULL
+  event_type TEXT NOT NULL
+  received_at TEXT NOT NULL
+  processed_at TEXT NULL
+  processing_state TEXT NOT NULL
+  safe_error_code TEXT NULL
+  UNIQUE(processor, processor_event_ref)
+
+marketplace_invoices
+  id TEXT PRIMARY KEY
+  subscription_id TEXT NOT NULL
+  processor_invoice_ref TEXT NOT NULL UNIQUE
+  amount_due_minor INTEGER NOT NULL
+  amount_paid_minor INTEGER NOT NULL
+  currency TEXT NOT NULL
+  state TEXT NOT NULL
+  hosted_invoice_url TEXT NULL
+  period_start TEXT NULL
+  period_end TEXT NULL
+  created_at TEXT NOT NULL
+```
+
+The exact processor data model, payment responsibility, tax handling, merchant-of-record status, refund/dispute responsibility, and permitted countries require a documented business decision before Phase 11 implementation. Payment provider capabilities and terms change; verify against current official documentation during implementation.
+
+Acceptance criteria:
+
+- Billing page shows only the signed-in user's organization subscriptions.
+- A verified provider webhook can create, update, and cancel a local subscription projection exactly once, even if delivered repeatedly.
+- A bad signature is rejected; an unknown event is retained safely and does not change entitlement.
+- A simulated missed/out-of-order event is repaired by reconciliation.
+- Cancellation clearly states whether access ends immediately or at period end.
+- Customer can reach a provider-hosted management page without the app handling payment details.
+
+### Phase 12. Paid marketplace launch and revenue sharing
+
+Goal: allow approved publishers to sell an API/plugin subscription through Vision API and let customers manage it in the billing page.
+
+Before opening checkout:
+
+- Pick countries/currencies, supported customer and publisher types, merchant-of-record/payment responsibility, fee model, payout timing, refund and cancellation policy, dispute handling, tax treatment, sanctions/fraud review, and support escalation.
+- Complete a provider sandbox launch checklist and reconcile test payments, renewals, failed payments, cancellation, refund, chargeback, publisher onboarding, and payout reports.
+- Confirm the selected processor supports the desired subscription flow and platform fee model in every launch country. Stripe Connect provides connected-account and application-fee concepts, but the appropriate charge model changes which party handles payment fees and losses; make this decision from current official docs before build.
+- Publish marketplace terms for customers and publishers, acceptable-use rules, prohibited API categories, IP/license expectations, privacy disclosures, refund policy, and how external providers are responsible for their service.
+- Create operational procedures and dashboards for unhandled webhooks, failed payouts, pending onboarding, disputes, refunds, and publisher suspensions.
+
+Implementation:
+
+- Create an offer associated with a published listing. Keep public marketing price copy separate from authoritative offer amount and provider price reference.
+- Enable checkout only if listing is published, offer active, publisher onboarding requirements are satisfied, and the region/currency is allowed.
+- Prefer hosted checkout. Bind checkout to the authenticated customer and organization on the server; never trust customer or offer IDs supplied by a browser without reauthorization.
+- Use idempotency keys for checkout creation and all payment mutations.
+- Activate entitlement only after a verified provider event or authoritative provider read. A browser success redirect is not proof of payment.
+- Handle renewal, payment failure, grace period, cancellation, refund, dispute, and publisher account restriction as explicit state transitions.
+- Apply platform fees only from server-side approved configuration. Record gross, fees, tax values from provider, net amounts, currency, and transfer references in a reconciliation ledger.
+- Admin refund and suspension actions require role checks, reason, audit entry, and a confirmation UX.
+- Provide exportable customer/publisher transaction statements and internal monthly reconciliation.
+
+Acceptance criteria:
+
+- Sandbox end-to-end: publisher onboards, offer is approved, customer subscribes, webhooks activate entitlement, invoice appears, customer cancels, and the state matches provider records.
+- Duplicate checkout requests do not create duplicate paid subscriptions.
+- A failed or delayed payment does not appear as active access unless policy explicitly grants a documented grace period.
+- A publisher who loses eligibility cannot receive new checkouts; existing customers receive a clear continuity/refund/support path.
+- Financial totals reconcile by provider, currency, period, and payout status.
+
+### Phase 13. Service connections and API access brokering
+
+Goal: move from links and instructions toward user-authorized service connections, one provider at a time.
+
+#### Stage 13A: customer-side connections
+
+- Add an `IntegrationProvider` contract with `authorize`, `validate`, `healthCheck`, `disconnect`, and optional `syncMetadata` operations.
+- Add a provider manifest: id/version, capabilities, auth type, OAuth scopes, callback URLs, required configuration fields, region support, rate limits, data retention, and documentation link.
+- Start with one low-risk provider and sandbox. Choose from actual usage data rather than implementing the whole directory.
+- Prefer OAuth authorization code with PKCE and narrowly scoped provider grants. For static API keys, accept them through a one-time secure form, encrypt at rest with a managed key, support rotation, and never reveal the value again.
+- Keep credential encryption keys outside SQLite and outside source control. Add key versioning and rotation; include backups and restore tests for encrypted credentials.
+- Store integration state per organization and provider. Isolate credentials by tenant and provider; a probe gets a short-lived secret only for its check.
+- Add explicit connect, reauthorize, rotate, disconnect, revoke, and delete actions, with audit entries and status display.
+- Before declaring a connection available, verify credential scopes and run a non-mutating health signal. Never test by creating a real resource or sending a message.
+- Add tests for missing scope, expired grant, revoked token, provider throttling, and cross-tenant access.
+
+#### Stage 13B: managed API gateway/proxy (separate decision)
+
+This is required only if “we become a middleman” means customer application traffic passes through Vision API, or Vision API issues managed API credentials. A listing directory and a billing page do not require a proxy.
+
+Required design before implementation:
+
+- Define exactly what traffic is proxied, supported protocols, body/file limits, streaming, timeouts, retries, idempotency, and regions.
+- Define whether Vision API or the external provider is the service provider to the end customer, and who is responsible for provider terms, data handling, abuse, uptime, refunds, and customer support.
+- Create per-tenant credentials with one-time display, hashing for verification, revocation, rotation, scopes, allowed products, and rate limits.
+- Store provider credentials in a managed secret store or encrypted vault. The gateway retrieves them server-side and never forwards them to browsers, MCP results, logs, traces, or error pages.
+- Implement usage metering at the gateway with a durable append-only event/outbox, request id, tenant id, provider, units, status, and timestamp. Exclude bodies, authorization headers, and sensitive query parameters by default.
+- Define a billing meter and reconciliation source of truth. A request is not billable until the provider/pricing contract defines its unit and dispute rules.
+- Add per-customer quotas, burst limits, spend caps, provider circuit breakers, abuse detection, and a kill switch by tenant/provider.
+- Add SSRF protection, destination allowlists, DNS rebinding protections, TLS verification, egress policy, request/response size limits, safe header allowlists, and protection against proxying arbitrary URLs.
+- Add data retention/deletion, DPA/security review, incident response, and provider contract review before production traffic.
+- Keep gateway deployment isolated from the monitoring scheduler and public directory. It must not share the SQLite volume or secrets with the probe process.
+- Load test and conduct security review before public release.
+
+Acceptance criteria:
+
+- A customer explicitly grants and can revoke access; no provider credential is visible after save.
+- A tenant cannot use another tenant's integration or consume its quota.
+- Every proxied request has a correlatable usage record without capturing secrets or payloads.
+- Rate limit and kill switch take effect promptly and fail closed.
+- Provider outage and Vision API gateway outage can be distinguished in status and support tooling.
+
+### Phase 14. Marketplace catalog expansion and ecosystem
+
+Only after discovery and one paid provider have stable operations:
+
+- Add developer SDKs, command-line helper, templates, and plugin packages as demand supports them.
+- Add team collections, bookmarks, comparison pages, and private curated catalogs.
+- Add publisher analytics: aggregate views, outbound clicks, conversion events supplied by checkout, active subscriptions, churn, and refund totals. Show only the publisher's own listings and aggregate data.
+- Add verified compatibility badges tied to a defined test harness and review date.
+- Add integrations to monitoring: create a monitor from a listing with a reviewed endpoint template, then let the customer enter their own credentials/secret reference. Do not silently create connections or monitors from a directory click.
+- Add API version/change notices and guide update alerts.
+- Consider ratings/reviews only with verified-purchase/verified-use rules, moderation, appeals, and anti-manipulation controls.
+- Expand to more processors/providers only through adapters and repeatable certification tests.
+
+## 25. Post-MVP architecture and code layout
+
+Keep the current monitor application layer as the core. Add separate modules with explicit dependency direction:
+
+```text
+src/
+  marketplace/
+    listings/              # public catalog, filtering, link redirect
+    guides/                # educational content and publishing status
+    publishers/            # profiles, ownership verification, reviews
+    billing/
+      contracts.ts         # provider-neutral checkout/subscription interfaces
+      stateMachine.ts      # local normalized subscription transitions
+      webhooks.ts          # signature validation, idempotency, event queue
+      reconciliation.ts
+      providers/           # processor-specific adapter, initially one
+    integrations/
+      contracts.ts
+      registry.ts
+      credentials.ts       # encryption boundary / secret-store adapter
+      providers/           # one API integration per module
+    gateway/               # only if Phase 13B is approved
+  auth/
+    webSessions.ts
+    organizations.ts
+    permissions.ts
+  audit/
+    writer.ts
+```
+
+REST route handlers and browser pages call application functions. Provider SDKs are imported only by provider adapters. Payment webhooks call the normalized billing application service. Publisher listing state must not be used as proof of entitlement. A payment subscription must not be used as proof that a provider API credential is valid.
+
+New process boundaries when scale requires them:
+
+- `monitor-api`: REST, monitoring, probes; retains the one-scheduler rule while SQLite is used.
+- `mcp`: stateless agent surface calling monitor application/API.
+- `web`: operator and Vision API pages, potentially same deployment initially.
+- `billing-worker`: asynchronous webhook processing and reconciliation; may share process at low volume, but it must have durable event state and idempotent handlers.
+- `gateway`: only if managed API traffic is implemented; isolated network, secrets, compute, and scaling.
+
+Do not create microservices before deployment/operational needs justify them. Modules and interfaces come first; process separation can follow.
+
+## 26. Post-MVP API and permission outline
+
+Public endpoints, unauthenticated but rate-limited:
+
+- `GET /marketplace/listings?query=&category=&type=&page=`
+- `GET /marketplace/listings/:slug`
+- `GET /marketplace/listings/:listingId/guides`
+- `GET /learn/:slug`
+- `GET /go/:listingId/:linkId` (only for stored, enabled, reviewed destinations)
+
+Authenticated customer endpoints:
+
+- `GET /me/subscriptions`
+- `GET /me/subscriptions/:id`
+- `POST /marketplace/offers/:id/checkout` (Phase 12 only; server resolves user/org and offer)
+- `POST /me/billing-portal` (Phase 11+)
+- `POST /me/listings/:id/save`
+- `GET /me/integrations` and connect/disconnect routes (Phase 13A only)
+
+Publisher endpoints:
+
+- `POST /publisher/listings`, `PATCH /publisher/listings/:id`, `POST /publisher/listings/:id/submit`
+- `GET /publisher/listings/:id/metrics`
+- Offer management routes only after commerce approval.
+
+Staff-only endpoints:
+
+- Review queue, approve/request changes/reject/suspend, audit search, webhook retry, reconciliation, refund actions. Every mutation requires staff scope, CSRF protection for browser actions, and audit record.
+
+Payment provider webhook:
+
+- `POST /webhooks/billing/:provider`; raw request body is used only for provider signature verification, then event is normalized, deduplicated, and queued/processed. Do not protect it with a browser session, but do enforce provider signature, payload limit, and replay/idempotency checks.
+
+Authorization rules:
+
+- Public read can see published listings and published guides only.
+- Publisher access is constrained by verified listing ownership.
+- Customer billing visibility is constrained to organization membership and billing role where appropriate.
+- Marketplace staff mutations are separately authorized and audited.
+- `read/write/admin` monitor API keys do not grant marketplace staff or publisher privileges.
+
+## 27. Operating, privacy, and security requirements
+
+- Feature flags: `VISION_MARKETPLACE_ENABLED`, `VISION_PUBLISHER_PORTAL_ENABLED`, `VISION_BILLING_ENABLED`, `VISION_INTEGRATIONS_ENABLED`, `VISION_GATEWAY_ENABLED`. Default all off until each phase is ready. Never use a feature flag as an authorization check.
+- Add rate limits for public search, redirect, account creation, login, publisher submission, checkout creation, webhook endpoints, and integration callbacks.
+- Audit publisher approval, listing ownership changes, plan/price changes, subscription state changes, refunds, staff access, integration grants/revokes, and gateway credential actions.
+- Encrypt session tokens and provider credentials appropriately. Hash passwords with a modern password hash if password auth is selected. Hash API tokens; never store their clear text.
+- Define data inventory, collection purpose, retention, deletion, user export, subprocessors, and incident response before billing or gateway launch.
+- Avoid third-party analytics that receive provider credentials, billing details, full referrers, or customer API traffic.
+- Use CSP, CSRF defense, output escaping, secure cookies, webhook signature verification, request-size caps, dependency scanning, and secret scanning.
+- Add backups and restore drills for all new state. Payment and integration state must not rely on an unbacked local SQLite volume in a multi-replica production setup.
+- Add alerts for failed billing event processing, reconciliation drift, expired publisher onboarding, high checkout failure, abnormal outbound redirect, and gateway quota/error spikes.
+- Keep external-provider uptime data separate from Vision API platform uptime. The monitor can monitor Vision API itself, but marketplace providers are customer dependencies.
+
+## 28. Success measures and launch gates
+
+Discovery phase measures:
+
+- Search-to-listing open rate and outbound click rate by category.
+- Guide starts and completion feedback, with no collection of secrets or code contents.
+- Percentage of listings with working docs/pricing/status links and current review dates.
+- User-reported stale, misleading, or unsafe listing rate.
+
+Publisher phase measures:
+
+- Submission-to-review time, approval/change-request rates, listing link health, and active publishers.
+
+Commerce phase measures:
+
+- Checkout completion, payment failure/recovery, cancellation, refund, dispute, payout failures, reconciliation drift, and support response time.
+- Gross volume, platform fee, processor fees, taxes, refunds, and net payout are separate values; do not report gross volume as revenue.
+
+Integration phase measures:
+
+- Successful connection, authorization expiry/revocation, health check success, provider rate limits, credential rotation, and tenant-isolation incidents.
+
+Do not use growth metrics to override security, accuracy, or provider transparency gates. Each phase launches only when its acceptance criteria pass, support ownership is assigned, and rollback/disable instructions are tested.
+
+## 29. Post-MVP implementation checklist
+
+Vision API directory and learning:
+
+- [ ] MVP release gate signed off before starting this roadmap
+- [ ] Vision API product identity and feature flags
+- [ ] Curated API/plugin listing model, search, categories, detail pages
+- [ ] Verified external links and safe redirect service
+- [ ] Editorial review, moderation, suspension, archive, audit trail
+- [ ] Privacy-safe aggregate outbound metrics
+- [ ] Learning center, source attribution, tested dates, cleanup instructions
+- [ ] No real secrets in docs, screenshots, examples, or analytics
+- [ ] Listing feedback and stale-content reports
+
+Publisher and customer identity:
+
+- [ ] Browser identity and organization membership
+- [ ] Publisher ownership/domain verification
+- [ ] Tenant isolation and role tests
+- [ ] Publisher listing portal and review queue
+- [ ] Account export/deletion and retention policy
+
+Billing and subscriptions:
+
+- [ ] Distinguish Vision API subscriptions from external provider subscriptions
+- [ ] Processor/provider decision and documented funds/responsibility model
+- [ ] Billing adapter and normalized subscription state machine
+- [ ] Hosted checkout and billing portal
+- [ ] Signed, idempotent webhook processing and reconciliation
+- [ ] Billing page, invoices/receipts, renewal/cancel states
+- [ ] Refund, dispute, tax, payout, and support operating procedures
+- [ ] End-to-end sandbox and financial reconciliation
+
+Connections and brokerage:
+
+- [ ] Provider integration contract and registry
+- [ ] Customer consent, least-privilege OAuth or protected credential entry
+- [ ] Encryption, rotation, revoke, delete, and audit lifecycle
+- [ ] Health check and provider sandbox test per adapter
+- [ ] Gateway business/security decision before any traffic proxying
+- [ ] Tenant quotas, metering, spend controls, abuse response, kill switch
+- [ ] Gateway isolation and load/security review
+
+## 30. Recommended build order
+
+1. Ship and operate the monitoring MVP.
+2. Build a curated, link-only Vision API directory with tested guides.
+3. Measure discovery and maintain a real editorial review process.
+4. Add customer accounts and publisher submissions with ownership verification.
+5. Add billing visibility and a hosted billing portal for Vision API subscriptions.
+6. Pilot paid marketplace subscriptions with a small number of approved publishers and a sandbox-to-production checklist.
+7. Add one customer-authorized integration based on measured demand.
+8. Decide separately whether API traffic brokering is necessary; if it is, build and operate the isolated gateway as its own major product phase.
+
+This order supports the initial plan to start with links, while creating a controlled path toward paid subscriptions and connected services. It does not assume that all APIs can be connected through one generic adapter: each provider needs its own contract, authorization model, test suite, and support path.
