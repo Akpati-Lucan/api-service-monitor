@@ -25,7 +25,7 @@ export interface AppDependencies {
   config: AppConfig;
   logger?: Logger;
   monitor?: Monitor;
-  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl" | "mailer" | "resolveTxt" | "processor">;
+  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl" | "mailer" | "resolveTxt" | "processor" | "integrationProvider">;
 }
 
 export function createApp({ db, config, logger, monitor, marketplace }: AppDependencies) {

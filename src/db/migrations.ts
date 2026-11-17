@@ -590,6 +590,94 @@ const version9SchemaSql = `
   CREATE INDEX IF NOT EXISTS idx_ledger_publisher ON billing_ledger(publisher_id, period);
 `;
 
+const version10SchemaSql = `
+  CREATE TABLE IF NOT EXISTS integration_connections (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    provider_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    status_reason TEXT NOT NULL DEFAULT '',
+    scopes TEXT NOT NULL DEFAULT '',
+    key_version INTEGER NOT NULL DEFAULT 1,
+    credential_iv TEXT NOT NULL DEFAULT '',
+    credential_tag TEXT NOT NULL DEFAULT '',
+    credential_ciphertext TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NULL,
+    region TEXT NOT NULL,
+    last_health_at TEXT NULL,
+    last_health_status TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (organization_id, provider_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS integration_grants (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES integration_connections(id),
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    state_hash TEXT NOT NULL UNIQUE,
+    challenge TEXT NOT NULL,
+    key_version INTEGER NOT NULL,
+    verifier_iv TEXT NOT NULL,
+    verifier_tag TEXT NOT NULL,
+    verifier_ciphertext TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS integration_usage (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES integration_connections(id),
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    kind TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    occurred_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_integration_usage_recent ON integration_usage(connection_id, occurred_at);
+`;
+
+const version11SchemaSql = `
+  CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (organization_id, name)
+  );
+
+  CREATE TABLE IF NOT EXISTS collection_items (
+    collection_id TEXT NOT NULL REFERENCES collections(id),
+    listing_id TEXT NOT NULL REFERENCES marketplace_listings(id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (collection_id, listing_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_templates (
+    listing_id TEXT PRIMARY KEY REFERENCES marketplace_listings(id),
+    url_template TEXT NOT NULL,
+    probe_kind TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS compatibility_reviews (
+    listing_id TEXT PRIMARY KEY REFERENCES marketplace_listings(id),
+    reviewed_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_notices (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL REFERENCES marketplace_listings(id),
+    version_label TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_listing_notices_listing ON listing_notices(listing_id, created_at);
+`;
+
 const steps: Array<{ version: number; sql: string }> = [
   { version: 1, sql: version1SchemaSql },
   { version: 2, sql: version2SchemaSql },
@@ -600,6 +688,8 @@ const steps: Array<{ version: number; sql: string }> = [
   { version: 7, sql: version7SchemaSql },
   { version: 8, sql: version8SchemaSql },
   { version: 9, sql: version9SchemaSql },
+  { version: 10, sql: version10SchemaSql },
+  { version: 11, sql: version11SchemaSql },
 ];
 
 export function runMigrations(db: Database.Database): void {

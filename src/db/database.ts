@@ -27,6 +27,8 @@ import { DEFAULT_GROUP_ID, runMigrations } from "./migrations.js";
 import { createMarketplaceStore, type MarketplaceStore } from "../marketplace/store.js";
 import { createIdentityStore, type IdentityStore } from "../marketplace/identity.js";
 import { createBillingStore, type BillingStore } from "../marketplace/billingStore.js";
+import { createIntegrationStore, type IntegrationStore } from "../marketplace/integrationStore.js";
+import { createExpansionStore, type ExpansionStore } from "../marketplace/expansionStore.js";
 import { seedMarketplace } from "../marketplace/seed.js";
 
 export interface DatabaseConfig {
@@ -153,6 +155,8 @@ export interface DatabaseApi {
   marketplace: MarketplaceStore;
   identity: IdentityStore;
   billing: BillingStore;
+  integrations: IntegrationStore;
+  expansion: ExpansionStore;
 }
 
 export interface HeartbeatRow {
@@ -284,6 +288,8 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
   const marketplace = createMarketplaceStore(db);
   const identity = createIdentityStore(db);
   const billing = createBillingStore(db);
+  const integrations = createIntegrationStore(db);
+  const expansion = createExpansionStore(db);
 
   logger?.info({ dbPath }, "database initialized");
 
@@ -1175,6 +1181,8 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     marketplace,
     identity,
     billing,
+    integrations,
+    expansion,
   };
 }
 

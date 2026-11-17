@@ -54,6 +54,21 @@ export const configSchema = z.object({
     .default("US,CA,GB,AU,JP,DE,FR,NL,IE")
     .transform((value) => value.split(",").map((item) => item.trim().toUpperCase()).filter((item) => /^[A-Z]{2}$/.test(item))),
   VISION_BILLING_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(0),
+  VISION_INTEGRATIONS_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  VISION_GATEWAY_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  VISION_INTEGRATION_KEY: z.string().default(""),
+  VISION_INTEGRATION_KEY_VERSION: z.coerce.number().int().min(1).max(1000).default(1),
+  VISION_INTEGRATION_KEY_PREVIOUS: z.string().default(""),
+  VISION_EXAMPLE_AUTHORIZE_URL: z.string().default(""),
+  VISION_EXAMPLE_TOKEN_URL: z.string().default(""),
+  VISION_EXAMPLE_HEALTH_URL: z.string().default(""),
+  VISION_EXAMPLE_CLIENT_ID: z.string().default(""),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {

@@ -40,23 +40,33 @@ export function directoryPage(input: { listings: PublicListing[]; q: string; cat
     ${empty}${cards}${pages}`);
 }
 
-export function listingPage(listing: PublicListing, reported = false, guides: Array<{ slug: string; title: string }> = [], portal = false): string {
+export function listingPage(listing: PublicListing, reported = false, guides: Array<{ slug: string; title: string }> = [], portal = false, extras?: { badge?: string; notices?: Array<{ versionLabel: string; summary: string }>; template?: boolean }): string {
   const description = renderMarkdown(listing.descriptionMd);
   const links = listing.links.length
     ? `<ul>${listing.links.map((link) => `<li><a href="/go/${escapeHtml(listing.id)}/${escapeHtml(link.id)}">${escapeHtml(link.label)}</a> <span class="meta">This link leaves Vision API.</span></li>`).join("")}</ul>`
     : `<p class="note">Provider links are hidden while this listing is ${escapeHtml(publicStatusLabel(listing.publicStatus).toLowerCase())}.</p>`;
   const reviewed = listing.lastReviewedAt ? `<p class="meta">Vision API last reviewed this listing ${escapeHtml(listing.lastReviewedAt)}.</p>` : "";
+  const badge = extras?.badge ? `<p>${escapeHtml(extras.badge)}</p>` : "";
+  const notices = extras?.notices?.length
+    ? `<h2>Version notices</h2><ul>${extras.notices.map((notice) => `<li>${escapeHtml(notice.versionLabel)}: ${escapeHtml(notice.summary)}</li>`).join("")}</ul>`
+    : "";
+  const monitor = portal && extras?.template ? `<p><a href="/collections/monitor?listingId=${escapeHtml(listing.id)}">Create a monitor from the reviewed template</a></p>` : "";
+  const save = portal ? `<p><a href="/collections?listingId=${escapeHtml(listing.id)}">Save in a collection</a></p>` : "";
   return document(listing.name, `<h1>${escapeHtml(listing.name)}</h1>
     ${nav(portal)}
     <p class="meta">External provider · ${escapeHtml(listing.providerName)} · ${escapeHtml(listing.providerDomain)}</p>
     <p class="status-${escapeHtml(listing.publicStatus)}">${escapeHtml(publicStatusLabel(listing.publicStatus))}</p>
     <p>${escapeHtml(listing.summary)}</p>
     ${reviewed}
+    ${badge}
     <p class="note">This listing links to another company's product. Vision API does not sell it, connect your account, or promise its uptime. Read the provider's status page and terms.</p>
     ${description}
     <h2>Provider links</h2>
     ${links}
     <p class="meta">${escapeHtml(listing.priceSummary ?? "The provider publishes pricing.")}</p>
+    ${notices}
+    ${save}
+    ${monitor}
     <h2>Guides</h2>
     ${guides.length ? `<ul>${guides.map((guide) => `<li><a href="/learn/${escapeHtml(guide.slug)}">${escapeHtml(guide.title)}</a></li>`).join("")}</ul>` : `<p class="note">No verified guide is published for this listing.</p>`}
     <h2>Report this listing</h2>

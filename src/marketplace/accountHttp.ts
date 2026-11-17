@@ -38,6 +38,9 @@ import {
 } from "./publisher.js";
 import type { BillingStore } from "./billingStore.js";
 import { billingExport } from "./billing.js";
+import type { IntegrationStore } from "./integrationStore.js";
+import { exportConnections } from "./integrations.js";
+import type { ExpansionStore } from "./expansionStore.js";
 import {
   accountHome,
   forgotPage,
@@ -51,12 +54,12 @@ import {
   resetPage,
 } from "./accountPages.js";
 
-export function mountAccounts(app: Express, identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, billing: BillingStore): void {
-  app.use("/account", createAccountRouter(identity, store, deps, billing));
-  app.use("/publisher", createPublisherRouter(identity, store, deps));
+export function mountAccounts(app: Express, identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, billing: BillingStore, integrations: IntegrationStore, expansion: ExpansionStore): void {
+  app.use("/account", createAccountRouter(identity, store, deps, billing, integrations));
+  app.use("/publisher", createPublisherRouter(identity, store, deps, expansion));
 }
 
-function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, billing: BillingStore): Router {
+function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, billing: BillingStore, integrations: IntegrationStore): Router {
   const router = Router();
   router.get("/register", (_req, res) => sendHtml(res, 200, registerPage()));
   router.post("/register", async (req, res, next) => {
@@ -133,7 +136,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
     try {
       purgeExpiredAccounts(identity);
       const current = loadSession(identity, req.header("cookie"));
-      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED));
+      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED, deps.config.VISION_INTEGRATIONS_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -141,7 +144,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
   router.get("/export", (req, res, next) => {
     try {
       const current = loadSession(identity, req.header("cookie"));
-      const body = { ...exportAccount(identity, store, current.user), billing: billingExport(billing, identity, current.user.id) };
+      const body = { ...exportAccount(identity, store, current.user), billing: billingExport(billing, identity, current.user.id), connections: exportConnections(integrations, identity, current.user.id) };
       res.status(200).type("json").setHeader("Content-Disposition", "attachment; filename=\"account.json\"").send(body);
     } catch (error) {
       next(error);
@@ -165,7 +168,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
       const current = loadSession(identity, req.header("cookie"));
       assertCsrf(current.session, req.body, req.header("x-csrf-token"));
       acceptInvitation(identity, current.user, text(req.body, "token"));
-      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED));
+      sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED, deps.config.VISION_INTEGRATIONS_ENABLED));
     } catch (error) {
       next(error);
     }
@@ -174,7 +177,7 @@ function createAccountRouter(identity: IdentityStore, store: MarketplaceStore, d
   return router;
 }
 
-function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps): Router {
+function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore, deps: PublisherDeps, expansion: ExpansionStore): Router {
   const router = Router();
   router.get("/", (req, res, next) => {
     try {
@@ -263,7 +266,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       const listing = await createPublisherListing(identity, store, deps, current.user, organizationId, listingInput(req.body));
-      sendHtml(res, 200, detail(identity, store, current.session.csrfToken, organizationId, listing.id));
+      sendHtml(res, 200, detail(identity, store, expansion, current.session.csrfToken, organizationId, listing.id));
     } catch (error) {
       next(error);
     }
@@ -291,7 +294,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       submitPublisherListing(identity, store, current.user, organizationId, one(req.params.id));
-      sendHtml(res, 200, detail(identity, store, current.session.csrfToken, organizationId, one(req.params.id)));
+      sendHtml(res, 200, detail(identity, store, expansion, current.session.csrfToken, organizationId, one(req.params.id)));
     } catch (error) {
       next(error);
     }
@@ -305,7 +308,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
         summary: text(req.body, "summary"),
         bodyMd: text(req.body, "bodyMd"),
       });
-      sendHtml(res, 200, detail(identity, store, current.session.csrfToken, organizationId, one(req.params.id)));
+      sendHtml(res, 200, detail(identity, store, expansion, current.session.csrfToken, organizationId, one(req.params.id)));
     } catch (error) {
       next(error);
     }
@@ -315,7 +318,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       appealListing(identity, store, current.user, organizationId, one(req.params.id), text(req.body, "note"));
-      sendHtml(res, 200, detail(identity, store, current.session.csrfToken, organizationId, one(req.params.id)));
+      sendHtml(res, 200, detail(identity, store, expansion, current.session.csrfToken, organizationId, one(req.params.id)));
     } catch (error) {
       next(error);
     }
@@ -325,7 +328,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
       const current = guard(req, identity);
       const organizationId = text(req.body, "organizationId");
       await updatePublisherListing(identity, store, deps, current.user, organizationId, one(req.params.id), listingInput(req.body));
-      sendHtml(res, 200, detail(identity, store, current.session.csrfToken, organizationId, one(req.params.id)));
+      sendHtml(res, 200, detail(identity, store, expansion, current.session.csrfToken, organizationId, one(req.params.id)));
     } catch (error) {
       next(error);
     }
@@ -334,7 +337,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
     try {
       const current = loadSession(identity, req.header("cookie"));
       const listing = owned(store, current.user.id, identity, one(req.params.id));
-      sendHtml(res, 200, detail(identity, store, current.session.csrfToken, listing.publisherId ?? "", listing.id));
+      sendHtml(res, 200, detail(identity, store, expansion, current.session.csrfToken, listing.publisherId ?? "", listing.id));
     } catch (error) {
       next(error);
     }
@@ -346,7 +349,7 @@ function createPublisherRouter(identity: IdentityStore, store: MarketplaceStore,
 function showAccount(res: Response, deps: PublisherDeps, identity: IdentityStore, store: MarketplaceStore, grant: SessionGrant) {
   res.setHeader("Set-Cookie", sessionCookie(grant.token, deps.config.NODE_ENV === "production", 14 * 24 * 60 * 60));
   const current = loadSession(identity, `${"vision_session"}=${encodeURIComponent(grant.token)}`);
-  sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED));
+  sendHtml(res, 200, accountHome(current.user, identity.listOrganizationsForUser(current.user.id), current.session.csrfToken, deps.config.VISION_BILLING_ENABLED, deps.config.VISION_INTEGRATIONS_ENABLED));
 }
 
 function home(identity: IdentityStore, store: MarketplaceStore, current: ReturnType<typeof loadSession>, requested: string, billing = false): string {
@@ -365,10 +368,11 @@ function home(identity: IdentityStore, store: MarketplaceStore, current: ReturnT
   });
 }
 
-function detail(identity: IdentityStore, store: MarketplaceStore, csrf: string, organizationId: string, listingId: string): string {
+function detail(identity: IdentityStore, store: MarketplaceStore, expansion: ExpansionStore, csrf: string, organizationId: string, listingId: string): string {
   const listing = store.getListing(listingId);
   if (!listing || listing.publisherId !== organizationId) throw new AppError("NOT_FOUND", "Listing does not exist", 404);
   const metrics = metricsFor(store, listing.id);
+  const totals = expansion.listingTotals(listing.id);
   const guides = store.listGuideIdsByPublisher(organizationId);
   return listingDetail({
     csrf,
@@ -377,6 +381,10 @@ function detail(identity: IdentityStore, store: MarketplaceStore, csrf: string, 
     views: metrics.views,
     clicks: metrics.outboundClicks,
     guideId: guides[0] ?? null,
+    checkoutStarts: totals.checkoutStarts,
+    activeSubscriptions: totals.activeSubscriptions,
+    canceledSubscriptions: totals.canceledSubscriptions,
+    refundMinor: totals.refundMinor,
   });
 }
 

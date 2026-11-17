@@ -191,6 +191,15 @@ describe("phase 6", () => {
       VISION_PLATFORM_FEE_BPS: 0,
       VISION_BILLING_COUNTRIES: ["US"],
       VISION_BILLING_GRACE_DAYS: 0,
+      VISION_INTEGRATIONS_ENABLED: false,
+      VISION_GATEWAY_ENABLED: false,
+      VISION_INTEGRATION_KEY: "",
+      VISION_INTEGRATION_KEY_VERSION: 1,
+      VISION_INTEGRATION_KEY_PREVIOUS: "",
+      VISION_EXAMPLE_AUTHORIZE_URL: "",
+      VISION_EXAMPLE_TOKEN_URL: "",
+      VISION_EXAMPLE_HEALTH_URL: "",
+      VISION_EXAMPLE_CLIENT_ID: "",
     };
     const app = createApp({ db, config });
     const created = await request(app).post("/services").send({ name: "Payments", url: "https://example.com", intervalSeconds: 60, timeoutMs: 1000, failureThreshold: 1 });

@@ -27,6 +27,10 @@ import { afterModeration, decideAppeal, duplicateLines, verifyDomainManual, type
 import { billingAdminView, createRecordProcessor, createStripeProcessor, type BillingProcessor } from "./billing.js";
 import { mountAccounts } from "./accountHttp.js";
 import { mountBilling, staffBillingRoutes } from "./billingHttp.js";
+import { mountConnections } from "./integrationHttp.js";
+import { resolveIntegrationProvider, type IntegrationProvider } from "./integrations.js";
+import { mountExpansion, publicListingExtras } from "./expansionHttp.js";
+import { recordGuideNotice } from "./expansion.js";
 import { consumeRateLimit } from "./rateLimit.js";
 import type { DestinationDeps } from "./urls.js";
 import type { GuideRecord, MarketplaceStore } from "./store.js";
@@ -63,11 +67,12 @@ export interface MarketplaceDeps extends DestinationDeps {
   mailer?: Mailer;
   resolveTxt?: (hostname: string) => Promise<string[]>;
   processor?: BillingProcessor;
+  integrationProvider?: IntegrationProvider;
 }
 
 export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
   if (!deps.config.VISION_MARKETPLACE_ENABLED) {
-    for (const prefix of ["/marketplace", "/vision", "/learn", "/go", "/account", "/publisher", "/billing"]) {
+    for (const prefix of ["/marketplace", "/vision", "/learn", "/go", "/account", "/publisher", "/billing", "/connections", "/gateway", "/collections"]) {
       app.use(prefix, (_req, res) => {
         res.status(404).type("text/plain").send("Not found");
       });
@@ -80,8 +85,11 @@ export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
   app.use("/vision", createPageRouter(store, deps));
   app.use("/learn", createLearnRouter(store, deps));
   app.use("/go", createGoRouter(store, deps));
+  app.use("/gateway", (_req, res) => {
+    res.status(404).type("text/plain").send("Not found");
+  });
   if (!deps.config.VISION_PUBLISHER_PORTAL_ENABLED) {
-    for (const prefix of ["/account", "/publisher", "/billing"]) {
+    for (const prefix of ["/account", "/publisher", "/billing", "/connections", "/collections"]) {
       app.use(prefix, (_req, res) => {
         res.status(404).type("text/plain").send("Not found");
       });
@@ -89,7 +97,15 @@ export function mountMarketplace(app: Express, deps: MarketplaceDeps): void {
     return;
   }
   const accounts = publisherDeps(deps);
-  mountAccounts(app, deps.db.identity, store, accounts, deps.db.billing);
+  mountAccounts(app, deps.db.identity, store, accounts, deps.db.billing, deps.db.integrations, deps.db.expansion);
+  mountExpansion(app, deps.db, deps.db.identity, store, deps.db.expansion, deps.config, deps);
+  if (!deps.config.VISION_INTEGRATIONS_ENABLED) {
+    app.use("/connections", (_req, res) => {
+      res.status(404).type("text/plain").send("Not found");
+    });
+  } else {
+    mountConnections(app, deps.db.identity, deps.db.integrations, deps.config, deps.integrationProvider ?? resolveIntegrationProvider(deps.config), deps.logger);
+  }
   if (!deps.config.VISION_BILLING_ENABLED) {
     app.use("/billing", (_req, res) => {
       res.status(404).type("text/plain").send("Not found");
@@ -216,7 +232,9 @@ function createApiRouter(store: MarketplaceStore, deps: MarketplaceDeps): Router
     try {
       requireStaff(req, deps.config);
       const note = typeof req.body?.note === "string" ? req.body.note : "";
-      res.json(verifyGuide(store, one(req.params.id), note));
+      const guide = verifyGuide(store, one(req.params.id), note);
+      recordGuideNotice(deps.db.expansion, guide.listingId, guide.revision, new Date().toISOString());
+      res.json(guide);
     } catch (error) {
       next(error);
     }
@@ -338,7 +356,8 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
       const token = typeof req.body?.token === "string" ? req.body.token : "";
       requireStaffToken(token, deps.config);
       const note = typeof req.body?.note === "string" ? req.body.note : "";
-      verifyGuide(store, one(req.params.id), note);
+      const guide = verifyGuide(store, one(req.params.id), note);
+      recordGuideNotice(deps.db.expansion, guide.listingId, guide.revision, new Date().toISOString());
       sendHtml(res, 200, renderEditor(store, deps, token));
     } catch (error) {
       next(error);
@@ -362,7 +381,7 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
     try {
       const listing = getPublicBySlug(store, req.params.slug, true);
       const guides = listPublicGuides(store, listing.id).map((guide) => ({ slug: guide.slug, title: guide.title }));
-      sendHtml(res, 200, listingPage(listing, false, guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED));
+      sendHtml(res, 200, listingPage(listing, false, guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED, listingExtras(deps, listing.id)));
     } catch (error) {
       next(error);
     }
@@ -376,7 +395,7 @@ function createPageRouter(store: MarketplaceStore, deps: MarketplaceDeps): Route
       const note = typeof req.body?.note === "string" ? req.body.note : "";
       reportListing(store, listing.id, kind, note);
       const guides = listPublicGuides(store, listing.id).map((guide) => ({ slug: guide.slug, title: guide.title }));
-      sendHtml(res, 200, listingPage(getPublicBySlug(store, listing.slug, false), true, guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED));
+      sendHtml(res, 200, listingPage(getPublicBySlug(store, listing.slug, false), true, guides, deps.config.VISION_PUBLISHER_PORTAL_ENABLED, listingExtras(deps, listing.id)));
     } catch (error) {
       next(error);
     }
@@ -530,6 +549,11 @@ function publisherDeps(deps: MarketplaceDeps): PublisherDeps {
 function staffView(store: MarketplaceStore, id: string) {
   const listing = store.getListing(id);
   return { ...listing, links: listing ? store.listLinks(id) : [] };
+}
+
+function listingExtras(deps: MarketplaceDeps, listingId: string) {
+  const extras = publicListingExtras(deps.db.expansion, listingId, new Date().toISOString());
+  return { badge: extras.badge, notices: extras.notices, template: Boolean(deps.db.expansion.getTemplate(listingId)) };
 }
 
 function requireStaff(req: Request, config: AppConfig): void {

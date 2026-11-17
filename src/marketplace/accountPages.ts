@@ -4,10 +4,11 @@ import { DELETED_ACCOUNT_DAYS, RESET_HOURS, SESSION_DAYS, VERIFY_HOURS } from ".
 import type { DomainVerification, OrganizationRecord, PublicUser, PublisherNotification, PublisherProfile } from "./identity.js";
 import type { ListingRecord, ReviewRecord } from "./store.js";
 
-function shell(title: string, body: string, billing = false): string {
+function shell(title: string, body: string, billing = false, connections = false): string {
   const billingLink = billing ? `<a href="/billing">Billing</a>` : "";
+  const connectionsLink = connections ? `<a href="/connections">Connections</a>` : "";
   return visionDocument(title, `<h1>${escapeHtml(title)}</h1>
-    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a>${billingLink}<a href="/operator/">Monitor</a></nav>
+    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a>${billingLink}${connectionsLink}<a href="/operator/">Monitor</a></nav>
     ${body}`);
 }
 
@@ -55,7 +56,7 @@ export function resetPage(token: string): string {
     </form>`);
 }
 
-export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: string, billing = false): string {
+export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: string, billing = false, connections = false): string {
   const list = orgs.length
     ? `<ul>${orgs.map((org) => `<li>${escapeHtml(org.name)} · ${escapeHtml(org.role ?? "member")}</li>`).join("")}</ul>`
     : `<p class="note">No organization yet.</p>`;
@@ -64,6 +65,7 @@ export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: 
     ${list}
     <p>Sessions last ${SESSION_DAYS} days. Verification links last ${VERIFY_HOURS} hours. Reset links last ${RESET_HOURS} hour. A deleted account is anonymized immediately and removed after ${DELETED_ACCOUNT_DAYS} days. This account stores an email, a display name, and a password hash.</p>
     <p><a href="/account/export">Download account export</a></p>
+    <p><a href="/collections">Collections</a></p>
     <form method="post" action="/account/invitations/accept">
       ${csrfField(csrf)}
       <label>Invitation token<input name="token" required></label>
@@ -74,7 +76,7 @@ export function accountHome(user: PublicUser, orgs: OrganizationRecord[], csrf: 
       ${csrfField(csrf)}
       <label>Password<input name="password" type="password" required></label>
       <button type="submit">Delete account</button>
-    </form>`, billing);
+    </form>`, billing, connections);
 }
 
 export function publisherHome(input: {
@@ -170,12 +172,21 @@ export function listingForm(csrf: string, organizationId: string, listing?: List
     </form>`);
 }
 
-export function listingDetail(input: { csrf: string; listing: ListingRecord; reviews: ReviewRecord[]; views: number; clicks: number; guideId: string | null }): string {
+export function listingDetail(input: { csrf: string; listing: ListingRecord; reviews: ReviewRecord[]; views: number; clicks: number; guideId: string | null; checkoutStarts: number; activeSubscriptions: number; canceledSubscriptions: number; refundMinor: number }): string {
   const history = input.reviews.map((review) => `<li>${escapeHtml(review.createdAt)} ${escapeHtml(review.decision)}: ${escapeHtml(review.note)}</li>`).join("");
   return shell(input.listing.name, `<p class="meta">${escapeHtml(input.listing.status)} · ${escapeHtml(input.listing.providerDomain)}</p>
     <p><a href="/publisher/listings/${escapeHtml(input.listing.id)}/preview">Preview</a></p>
     <p><a href="/publisher/listings/${escapeHtml(input.listing.id)}/edit">Edit</a></p>
     <p>Views ${input.views}. Outbound clicks ${input.clicks}. These counts are not tied to a visitor.</p>
+    <p>Checkout starts ${input.checkoutStarts}. Active subscriptions ${input.activeSubscriptions}. Canceled subscriptions ${input.canceledSubscriptions}. Refunds ${input.refundMinor} minor units. These figures are totals for this listing.</p>
+    <h2>Version notice</h2>
+    <form method="post" action="/publisher/listings/${escapeHtml(input.listing.id)}/notices">
+      ${csrfField(input.csrf)}
+      <input type="hidden" name="organizationId" value="${escapeHtml(input.listing.publisherId ?? "")}">
+      <label>Version<input name="versionLabel" required></label>
+      <label>Summary<input name="summary" required maxlength="200"></label>
+      <button type="submit">Post notice</button>
+    </form>
     <h2>Review history</h2>
     ${history ? `<ul>${history}</ul>` : `<p class="note">No review yet.</p>`}
     ${input.listing.status === "suspended" ? `<p>Suspension reason: ${escapeHtml(input.listing.reviewNote ?? "")}</p>` : ""}
