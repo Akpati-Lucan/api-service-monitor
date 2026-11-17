@@ -181,6 +181,9 @@ describe("phase 6", () => {
       STATUS_BASE_URL: "http://localhost:3000",
       RETENTION_RAW_DAYS: 14,
       SQLITE_PROBE_ROOT: "",
+      VISION_MARKETPLACE_ENABLED: false,
+      VISION_STAFF_TOKEN: "",
+      VISION_PUBLIC_RATE_LIMIT: 60,
     };
     const app = createApp({ db, config });
     const created = await request(app).post("/services").send({ name: "Payments", url: "https://example.com", intervalSeconds: 60, timeoutMs: 1000, failureThreshold: 1 });

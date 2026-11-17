@@ -191,11 +191,104 @@ const version4SchemaSql = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeats_token ON heartbeats(token_hash);
 `;
 
+const version5SchemaSql = `
+  CREATE TABLE IF NOT EXISTS marketplace_listings (
+    id TEXT PRIMARY KEY,
+    slug TEXT UNIQUE NOT NULL,
+    publisher_id TEXT NULL,
+    name TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    description_md TEXT NOT NULL,
+    category TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    listing_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    pricing_model TEXT NOT NULL,
+    currency TEXT NULL,
+    price_summary TEXT NULL,
+    provider_name TEXT NOT NULL,
+    provider_domain TEXT NOT NULL,
+    docs_url TEXT NOT NULL,
+    signup_url TEXT NULL,
+    pricing_url TEXT NULL,
+    status_url TEXT NULL,
+    terms_url TEXT NOT NULL,
+    privacy_url TEXT NOT NULL,
+    regions_json TEXT NOT NULL,
+    capabilities_json TEXT NOT NULL,
+    requirements_json TEXT NOT NULL,
+    review_note TEXT NULL,
+    reviewed_by TEXT NULL,
+    published_at TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_links (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    url TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    enabled INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_events (
+    id INTEGER PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    coarse_referrer TEXT NULL,
+    visitor_key_hash TEXT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_guides (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    body_md TEXT NOT NULL,
+    prerequisites TEXT NOT NULL,
+    difficulty TEXT NOT NULL,
+    published INTEGER NOT NULL,
+    verified_at TEXT NULL,
+    verified_by TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_reviews (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    reviewer_id TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS listing_reports (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_listings_status_category ON marketplace_listings(status, category);
+  CREATE INDEX IF NOT EXISTS idx_listing_links_listing ON listing_links(listing_id, sort_order);
+  CREATE INDEX IF NOT EXISTS idx_listing_events_listing ON listing_events(listing_id, event_type);
+  CREATE INDEX IF NOT EXISTS idx_listing_reports_status ON listing_reports(status, created_at);
+`;
+
 const steps: Array<{ version: number; sql: string }> = [
   { version: 1, sql: version1SchemaSql },
   { version: 2, sql: version2SchemaSql },
   { version: 3, sql: version3SchemaSql },
   { version: 4, sql: version4SchemaSql },
+  { version: 5, sql: version5SchemaSql },
 ];
 
 export function runMigrations(db: Database.Database): void {

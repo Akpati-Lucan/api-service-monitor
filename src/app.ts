@@ -14,8 +14,10 @@ import { createStatusPagesRouter } from "./routes/statusPages.js";
 import { createAlertRoutesRouter } from "./routes/alertRoutes.js";
 import { createMaintenanceRouter } from "./routes/maintenance.js";
 import { createIncidentsRouter } from "./routes/incidents.js";
+import { createSummaryRouter } from "./routes/summary.js";
 import { createHeartbeatsRouter } from "./routes/heartbeats.js";
 import { createMcpRouter } from "./mcp/http.js";
+import { mountMarketplace, type MarketplaceDeps } from "./marketplace/http.js";
 import { createAuthMiddleware } from "./auth/middleware.js";
 
 export interface AppDependencies {
@@ -23,9 +25,10 @@ export interface AppDependencies {
   config: AppConfig;
   logger?: Logger;
   monitor?: Monitor;
+  marketplace?: Pick<MarketplaceDeps, "resolveHost" | "fetchImpl">;
 }
 
-export function createApp({ db, config, logger, monitor }: AppDependencies) {
+export function createApp({ db, config, logger, monitor, marketplace }: AppDependencies) {
   const app = express();
   const appLogger = logger ?? createLogger({ NODE_ENV: config.NODE_ENV, LOG_LEVEL: config.LOG_LEVEL });
 
@@ -42,6 +45,7 @@ export function createApp({ db, config, logger, monitor }: AppDependencies) {
   app.use("/health", createHealthRouter({ db, monitor, logger: appLogger }));
   app.use("/status", createPublicStatusRouter({ db, config }));
   app.use("/heartbeats", createHeartbeatsRouter({ db }));
+  mountMarketplace(app, { db, config, ...marketplace });
   app.use(createAuthMiddleware({ db, config }));
   app.use("/services", createServicesRouter({ db, config, monitor, logger: appLogger }));
   app.use("/groups", createGroupsRouter({ db }));
@@ -50,6 +54,7 @@ export function createApp({ db, config, logger, monitor }: AppDependencies) {
   app.use("/alert-routes", createAlertRoutesRouter({ db }));
   app.use("/maintenance-windows", createMaintenanceRouter({ db }));
   app.use("/incidents", createIncidentsRouter({ db }));
+  app.use("/summary", createSummaryRouter({ db }));
   if (config.MCP_ENABLED) {
     app.use("/mcp", createMcpRouter({ db, config, monitor, logger: appLogger }));
   }

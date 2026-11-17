@@ -1,11 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { DatabaseApi } from "../db/database.js";
+import { acknowledgeIncident } from "../application/acknowledgements.js";
 import { addIncidentUpdate } from "../application/incidentUpdates.js";
 import { getIncidentView, listOpenIncidentViews } from "../application/readModels.js";
 import { requireGroup } from "../auth/access.js";
 import { requireAuth } from "../auth/access.js";
 import { validationError } from "../utils/errors.js";
+
+const noteSchema = z.object({
+  note: z.string().trim().min(1).max(500),
+});
 
 const updateSchema = z.object({
   state: z.enum(["investigating", "identified", "monitoring", "resolved"]),
@@ -34,6 +39,20 @@ export function createIncidentsRouter({ db }: { db: DatabaseApi }) {
         ...view,
         checks: db.getRecentHealthChecks(view.serviceId, 20),
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:id/acknowledgements", (req, res, next) => {
+    try {
+      const parsed = noteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw validationError("Validation failed", parsed.error.flatten().fieldErrors as Record<string, string[]>);
+      }
+      const acknowledgement = acknowledgeIncident(db, requireAuth(res), req.params.id, parsed.data.note);
+      const incident = db.getIncident(req.params.id);
+      res.status(201).json({ acknowledgement, incident });
     } catch (error) {
       next(error);
     }

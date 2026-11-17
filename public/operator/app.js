@@ -141,7 +141,11 @@ async function incidentPage(id) {
       <button type="submit">Add update</button>
     </form>
     <h2>Acknowledgements</h2>
-    ${notes ? `<ul>${notes}</ul>` : "<p class=\"note\">No acknowledgements yet.</p>"}`;
+    ${notes ? `<ul>${notes}</ul>` : "<p class=\"note\">No acknowledgements yet.</p>"}
+    <form data-action="acknowledge" data-id="${escapeHtml(incident.id)}">
+      <label>Note<textarea name="note" required maxlength="500"></textarea></label>
+      <button type="submit">Acknowledge</button>
+    </form>`;
 }
 
 async function groupsPage() {
@@ -222,6 +226,11 @@ async function onSubmit(event) {
     }
     if (action === "update") {
       await api(`/incidents/${form.dataset.id}/updates`, { method: "POST", body: { state: data.get("state"), message: data.get("message") } });
+      render();
+      return;
+    }
+    if (action === "acknowledge") {
+      await api(`/incidents/${form.dataset.id}/acknowledgements`, { method: "POST", body: { note: data.get("note") } });
       render();
       return;
     }

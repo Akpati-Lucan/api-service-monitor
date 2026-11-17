@@ -153,6 +153,9 @@ export interface AppConfig {
   STATUS_BASE_URL: string;
   RETENTION_RAW_DAYS: number;
   SQLITE_PROBE_ROOT: string;
+  VISION_MARKETPLACE_ENABLED: boolean;
+  VISION_STAFF_TOKEN: string;
+  VISION_PUBLIC_RATE_LIMIT: number;
   VERSION?: string;
 }
 

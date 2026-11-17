@@ -1,7 +1,7 @@
 import type { Service } from "../types/index.js";
 import type { DatabaseApi } from "../db/database.js";
 import type { ProbeRegistry } from "../probes/registry.js";
-import type { AlertSink } from "./alert.js";
+import type { AlertSink, PushSink } from "./alert.js";
 import type { Logger } from "../utils/logger.js";
 import { runServiceCheck, type CheckCycleResult } from "../application/checks.js";
 import { conflict, notFound } from "../utils/errors.js";
@@ -22,6 +22,7 @@ export interface MonitorDependencies {
   db: DatabaseApi;
   registry: ProbeRegistry;
   alerts: AlertSink;
+  push?: PushSink;
   logger: Logger;
   retry: { retries: number; baseDelayMs: number; factor: number };
   sqliteRoot?: string;
@@ -140,6 +141,7 @@ export class InMemoryMonitor implements Monitor {
         db: this.deps.db,
         registry: this.deps.registry,
         alerts: this.deps.alerts,
+        push: this.deps.push,
         logger: this.deps.logger,
         retry: this.deps.retry,
         sqliteRoot: this.deps.sqliteRoot,

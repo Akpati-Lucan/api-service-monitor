@@ -10,10 +10,13 @@ import {
   listMonitorViews,
   listOpenIncidentViews,
 } from "../application/readModels.js";
+import { acknowledgeIncident } from "../application/acknowledgements.js";
+import { createMaintenanceWindow } from "../application/maintenance.js";
+import { createMonitor } from "../application/monitors.js";
 import { listWorkloads } from "../application/workloads.js";
 import { requireGroup, requireScope, requestedGroup, visibleService } from "../auth/access.js";
 import type { Monitor } from "../services/monitor.js";
-import type { AuthContext, AuthScope, ServiceStatus } from "../types/index.js";
+import type { AppConfig, AuthContext, AuthScope, ServiceStatus } from "../types/index.js";
 
 export interface McpTool {
   name: string;
@@ -32,9 +35,10 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
 
 export function createMcpTools(
   db: DatabaseApi,
-  monitor: (Pick<Monitor, "isRunning" | "activeServiceCount"> & Partial<Pick<Monitor, "runOnce">>) | undefined,
+  monitor: (Pick<Monitor, "isRunning" | "activeServiceCount"> & Partial<Pick<Monitor, "runOnce" | "registerService" | "unregisterService">>) | undefined,
   auth: AuthContext,
   enabledProbes: readonly string[] = [],
+  config?: AppConfig,
 ): McpTool[] {
   const tools: McpTool[] = [
     {
@@ -174,7 +178,110 @@ export function createMcpTools(
         }
         const service = visibleService(db, auth, requireString(args.serviceId, "serviceId"));
         const outcome = await monitor.runOnce(service.id);
-        return outcome.result;
+        return { ...outcome.result, effect: outcome.effect, streak: outcome.streak, incidentId: outcome.incidentId ?? null };
+      },
+    },
+    {
+      name: "monitors.create",
+      description: "Create a monitor. Pass secretRef, the name of an environment variable. Do not pass a secret value.",
+      scope: "write",
+      inputSchema: objectSchema({
+        name: { type: "string" },
+        url: { type: "string" },
+        kind: { type: "string" },
+        role: { type: "string", enum: ["owned", "dependency"] },
+        groupId: { type: "string" },
+        secretRef: { type: "string" },
+        intervalSeconds: { type: "integer" },
+        timeoutMs: { type: "integer" },
+        failureThreshold: { type: "integer" },
+        successThreshold: { type: "integer" },
+        latencyBudgetMs: { type: "integer" },
+        config: { type: "object" },
+      }, ["name"]),
+      async call(args) {
+        if (!config) {
+          throw new AppError("INTERNAL_ERROR", "Monitor configuration is not available", 503);
+        }
+        const groupId = requestedGroup(auth, optionalString(args.groupId));
+        const service = createMonitor(db, config, {
+          name: requireString(args.name, "name"),
+          url: optionalString(args.url),
+          kind: optionalString(args.kind),
+          role: args.role === "dependency" ? "dependency" : args.role === "owned" ? "owned" : undefined,
+          groupId,
+          secretRef: optionalString(args.secretRef),
+          intervalSeconds: optionalInt(args.intervalSeconds, "intervalSeconds"),
+          timeoutMs: optionalInt(args.timeoutMs, "timeoutMs"),
+          failureThreshold: optionalInt(args.failureThreshold, "failureThreshold"),
+          successThreshold: optionalInt(args.successThreshold, "successThreshold"),
+          latencyBudgetMs: optionalInt(args.latencyBudgetMs, "latencyBudgetMs"),
+          config: optionalRecord(args.config),
+        });
+        monitor?.registerService?.(service);
+        const view = getMonitorView(db, service.id);
+        return service.heartbeatToken ? { ...view, heartbeatToken: service.heartbeatToken } : view;
+      },
+    },
+    {
+      name: "monitors.pause",
+      description: "Pause a monitor. The timer stops and no further checks run until it is resumed.",
+      scope: "write",
+      inputSchema: objectSchema({ id: { type: "string" } }, ["id"]),
+      async call(args) {
+        const service = visibleService(db, auth, requireString(args.id, "id"));
+        db.setServicePaused(service.id, true);
+        monitor?.unregisterService?.(service.id);
+        return getMonitorView(db, service.id);
+      },
+    },
+    {
+      name: "monitors.resume",
+      description: "Resume a monitor and run a check now.",
+      scope: "write",
+      inputSchema: objectSchema({ id: { type: "string" } }, ["id"]),
+      async call(args) {
+        const service = visibleService(db, auth, requireString(args.id, "id"));
+        db.setServicePaused(service.id, false);
+        const resumed = db.getService(service.id);
+        if (resumed) monitor?.registerService?.(resumed);
+        return getMonitorView(db, service.id);
+      },
+    },
+    {
+      name: "incidents.acknowledge",
+      description: "Record an acknowledgement note. This does not resolve the incident.",
+      scope: "write",
+      inputSchema: objectSchema({
+        id: { type: "string" },
+        note: { type: "string" },
+      }, ["id", "note"]),
+      async call(args) {
+        const id = requireString(args.id, "id");
+        const acknowledgement = acknowledgeIncident(db, auth, id, requireString(args.note, "note"));
+        const incident = db.getIncident(id);
+        return { acknowledgement, resolvedAt: incident?.resolvedAt ?? null };
+      },
+    },
+    {
+      name: "maintenance.create",
+      description: "Open a maintenance window for one monitor or one group. Checks continue and incidents are suppressed.",
+      scope: "write",
+      inputSchema: objectSchema({
+        serviceId: { type: "string" },
+        groupId: { type: "string" },
+        startsAt: { type: "string" },
+        endsAt: { type: "string" },
+        note: { type: "string" },
+      }, ["startsAt", "endsAt"]),
+      async call(args) {
+        return createMaintenanceWindow(db, auth, {
+          serviceId: optionalString(args.serviceId) ?? null,
+          groupId: optionalString(args.groupId) ?? null,
+          startsAt: requireString(args.startsAt, "startsAt"),
+          endsAt: requireString(args.endsAt, "endsAt"),
+          note: optionalString(args.note) ?? null,
+        });
       },
     },
   ];
@@ -286,6 +393,22 @@ function requireString(value: unknown, name: string): string {
     throw new AppError("VALIDATION_ERROR", `${name} is required`, 400);
   }
   return value;
+}
+
+function optionalInt(value: unknown, name: string): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new AppError("VALIDATION_ERROR", `${name} must be an integer`, 400);
+  }
+  return value;
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value == null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new AppError("VALIDATION_ERROR", "config must be an object", 400);
+  }
+  return value as Record<string, unknown>;
 }
 
 function optionalString(value: unknown): string | undefined {

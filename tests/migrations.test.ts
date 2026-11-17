@@ -53,13 +53,14 @@ describe("migrations", () => {
       `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
         'groups', 'maintenance_windows', 'api_keys', 'alert_routes', 'alert_deliveries',
         'status_pages', 'status_components', 'incident_updates', 'subscribers',
-        'acknowledgements', 'heartbeats', 'check_rollups'
+        'acknowledgements', 'heartbeats', 'check_rollups',
+        'marketplace_listings', 'listing_links', 'listing_events', 'listing_guides', 'listing_reviews', 'listing_reports'
       )`,
     ).all() as Array<{ name: string }>;
     upgraded.close();
 
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
     expect(group).toEqual({ name: "Default", slug: "default" });
-    expect(tables).toHaveLength(12);
+    expect(tables).toHaveLength(18);
   });
 });

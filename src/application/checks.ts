@@ -1,6 +1,6 @@
 import type { ProbeRegistry } from "../probes/registry.js";
 import { resolveSecret } from "../probes/secrets.js";
-import type { AlertSink } from "../services/alert.js";
+import type { AlertSink, PushSink } from "../services/alert.js";
 import type { CheckResult, Service } from "../types/index.js";
 import type { DatabaseApi } from "../db/database.js";
 import type { Logger } from "../utils/logger.js";
@@ -20,6 +20,7 @@ export async function runServiceCheck(input: {
   db: DatabaseApi;
   registry: ProbeRegistry;
   alerts: AlertSink;
+  push?: PushSink;
   logger: Logger;
   retry: { retries: number; baseDelayMs: number; factor: number };
   now?: Date;
@@ -61,6 +62,12 @@ export async function runServiceCheck(input: {
       errorClass: result.errorClass ?? null,
     });
     await input.alerts.notify({ service: input.service, incident, kind: "opened" });
+    await input.push?.push({
+      incidentId: incident.id,
+      serviceName: input.service.name,
+      kind: "opened",
+      reason: incident.reason,
+    });
     return { result, effect: "open", streak: evaluation.streak, incidentId: incident.id };
   }
 
@@ -68,6 +75,12 @@ export async function runServiceCheck(input: {
     input.db.resolveIncident(open.id, saved.checkedAt);
     const incident = input.db.getIncident(open.id) ?? { ...open, resolvedAt: saved.checkedAt };
     await input.alerts.notify({ service: input.service, incident, kind: "resolved" });
+    await input.push?.push({
+      incidentId: incident.id,
+      serviceName: input.service.name,
+      kind: "resolved",
+      reason: incident.reason,
+    });
     return { result, effect: "resolve", streak: evaluation.streak, incidentId: open.id };
   }
 

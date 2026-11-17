@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { createApp } from "./app.js";
 import { createDatabase, initializeDatabase } from "./db/database.js";
 import { InMemoryMonitor } from "./services/monitor.js";
-import { LoggingAlertSink } from "./services/alert.js";
+import { LoggingAlertSink, LoggingPushSink } from "./services/alert.js";
 import { RoutingAlertSink } from "./alerts/routing.js";
 import { createDefaultProbeRegistry } from "./probes/registry.js";
 import type { AppConfig } from "./types/index.js";
@@ -28,6 +28,7 @@ export function startMonitor(config: AppConfig, logger: Logger) {
       fallback: new LoggingAlertSink(logger),
     }),
     logger,
+    push: new LoggingPushSink(logger),
     retry: {
       retries: config.RETRY_COUNT,
       baseDelayMs: config.RETRY_BASE_DELAY_MS,

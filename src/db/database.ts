@@ -24,6 +24,8 @@ import type {
   StatusVisibility,
 } from "../types/index.js";
 import { DEFAULT_GROUP_ID, runMigrations } from "./migrations.js";
+import { createMarketplaceStore, type MarketplaceStore } from "../marketplace/store.js";
+import { seedMarketplace } from "../marketplace/seed.js";
 
 export interface DatabaseConfig {
   dbPath: string;
@@ -86,6 +88,7 @@ export interface DatabaseApi {
   }>;
   listIncidentUpdates(incidentId: string): IncidentUpdate[];
   listAcknowledgements(incidentId: string): Acknowledgement[];
+  insertAcknowledgement(input: { incidentId: string; note: string; actor: string }): Acknowledgement;
   getLatestHealthCheck(serviceId: string): HealthCheck | undefined;
   listHealthChecksSince(serviceId: string, sinceIso: string): HealthCheck[];
   listRollupsSince(serviceId: string, sinceIso: string): CheckRollup[];
@@ -145,6 +148,7 @@ export interface DatabaseApi {
   deleteSubscriber(id: string): void;
   listVerifiedSubscriberEmails(serviceId: string): string[];
   ping(): boolean;
+  marketplace: MarketplaceStore;
 }
 
 export interface HeartbeatRow {
@@ -272,11 +276,13 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
+  const marketplace = createMarketplaceStore(db);
 
   logger?.info({ dbPath }, "database initialized");
 
   function initialize(): void {
     runMigrations(db);
+    seedMarketplace(db);
   }
 
   function close(): void {
@@ -540,6 +546,20 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
       message: String(row.message),
       createdAt: String(row.created_at),
     }));
+  }
+
+  function insertAcknowledgement(input: { incidentId: string; note: string; actor: string }): Acknowledgement {
+    const row: Acknowledgement = {
+      id: randomUUID(),
+      incidentId: input.incidentId,
+      note: input.note,
+      actor: input.actor,
+      createdAt: new Date().toISOString(),
+    };
+    db.prepare(
+      `INSERT INTO acknowledgements (id, incident_id, note, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ).run(row.id, row.incidentId, row.note, row.actor, row.createdAt);
+    return row;
   }
 
   function listAcknowledgements(incidentId: string): Acknowledgement[] {
@@ -1096,6 +1116,7 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     listOpenIncidents,
     listIncidentUpdates,
     listAcknowledgements,
+    insertAcknowledgement,
     getLatestHealthCheck,
     listHealthChecksSince,
     listRollupsSince,
@@ -1144,6 +1165,7 @@ export function createDatabase({ dbPath, logger }: DatabaseConfig): DatabaseApi 
     deleteSubscriber,
     listVerifiedSubscriberEmails,
     ping,
+    marketplace,
   };
 }
 

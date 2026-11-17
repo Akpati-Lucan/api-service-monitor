@@ -32,6 +32,12 @@ export const configSchema = z.object({
   STATUS_BASE_URL: z.string().default("http://localhost:3000"),
   RETENTION_RAW_DAYS: z.coerce.number().int().min(1).max(3650).default(14),
   SQLITE_PROBE_ROOT: z.string().default(""),
+  VISION_MARKETPLACE_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true" || value === "1"),
+  VISION_STAFF_TOKEN: z.string().default(""),
+  VISION_PUBLIC_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(60),
 });
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {

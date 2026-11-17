@@ -32,6 +32,9 @@ const baseConfig: AppConfig = {
   STATUS_BASE_URL: "http://localhost:3000",
   RETENTION_RAW_DAYS: 14,
   SQLITE_PROBE_ROOT: "",
+  VISION_MARKETPLACE_ENABLED: false,
+  VISION_STAFF_TOKEN: "",
+  VISION_PUBLIC_RATE_LIMIT: 60,
   VERSION: "1.0.0",
 };
 
