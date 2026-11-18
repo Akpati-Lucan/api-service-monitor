@@ -1,5 +1,13 @@
 # Design decisions
 
+## Field register replaces Harbor daylight
+
+Harbor daylight was a cool sheet and a circular lamp, sized for one status column. Once the operator console and the Vision API pages used that same sheet, the product looked unfinished: a narrow floating plate, paragraphs with no rhythm, and no shared way to see which section you were in.
+
+The replacement is a field register. The one memorable object is a square stamp bound to a cloth spine. Titles use a slab (Rockwell and its cousins). Body text uses Candara. The ground is grey-green cloth `#D5DDD0`, not the rejected tide `#E4EEF2`, and not the cream-and-terracotta default. Status hues stay dark enough for a white badge word. Links use a separate blue so “up” and “click” are not the same color.
+
+The public status page still has no operator navigation. Current-section underlines exist only on pages that already had a navigation line.
+
 ## The only UI is the status page
 
 The repository had one HTML response. Building buttons, modals, and an app shell would have been a new product, the operator console reserved for a later phase. The design system still names how those controls should look so a later page does not invent a second style.

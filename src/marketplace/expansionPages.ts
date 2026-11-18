@@ -4,7 +4,7 @@ import type { CollectionItem, CollectionRecord, ListingNotice } from "./expansio
 
 function shell(title: string, body: string): string {
   return visionDocument(title, `<h1>${escapeHtml(title)}</h1>
-    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a><a href="/collections">Collections</a><a href="/operator/">Monitor</a></nav>
+    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a><a href="/collections" aria-current="page">Collections</a><a href="/operator/">Monitor</a></nav>
     ${body}`);
 }
 

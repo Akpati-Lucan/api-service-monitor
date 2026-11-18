@@ -4,7 +4,7 @@ The status page is server-rendered HTML. These are the reusable pieces. They are
 
 ## Signal
 
-The block under the title. A lamp div plus a headline, a detail sentence, and an updated time.
+The block under the title. A square stamp (the `lamp` element) plus a headline, a detail sentence, and an updated time. The element keeps the name `lamp` so the markup stays stable. The shape is a square.
 
 | State | Lamp class | Headline | Detail |
 | --- | --- | --- | --- |
@@ -52,7 +52,7 @@ One sentence: “Machine-readable copies:” then links whose visible words are 
 
 ## Badge
 
-`renderBadge` in `src/status/badge.ts`. The SVG must contain the status word `operational`, `degraded`, or `down`. Fills: `#0c6b4d`, `#8a5a00`, `#8e1d1d`. This is an embed, not a page component. Do not rebuild it as HTML.
+`renderBadge` in `src/status/badge.ts`. The SVG must contain the status word `operational`, `degraded`, or `down`. Fills: `#0e6b45`, `#8a5300`, `#8e2d28`. This is an embed, not a page component. Do not rebuild it as HTML.
 
 ## What not to add here
 

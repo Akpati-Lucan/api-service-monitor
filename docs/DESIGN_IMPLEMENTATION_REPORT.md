@@ -63,7 +63,7 @@ Under 640px the sheet margin and side borders drop, padding tightens, the title 
 
 ## 13. Outstanding recommendations
 
-- When an operator console is built, use this sheet, these tokens, and these type stacks. Do not add a second palette.
+- The operator console, the public status page, and Vision API now share the field register in `docs/DESIGN.md`. Do not add a second palette.
 - Add a maintenance line to the status log when that data should be public.
 - Keep CSS in the TypeScript string so a production outage cannot depend on a stylesheet host.
 
@@ -85,3 +85,19 @@ Under 640px the sheet margin and side borders drop, padding tightens, the title 
 | `.cursor/rules/design-system.mdc` | Rule for later status-page edits |
 
 `SKILL.md` was not changed. Product Phase 4 was not started. Nothing was committed.
+
+## Field register, 17 November 2026
+
+Harbor daylight was replaced because the same narrow sheet made the console and the Vision API pages look unfinished. The shared system is a cloth spine, a square stamp, Rockwell headings, and Candara body text. Tokens are in `src/status/pageCss.ts` and `public/operator/app.css`.
+
+Pages restyled, without route or behavior changes:
+
+- Public status page (`src/status/pageCss.ts`, badge fills in `src/status/badge.ts`)
+- Operator console (`public/operator/index.html`, `app.css`, `app.js`, `sw.js`)
+- Vision API directory, listing, learn, and guide (`src/marketplace/pages.ts`)
+- Account and publisher (`src/marketplace/accountPages.ts`)
+- Billing (`src/marketplace/billingPages.ts`)
+- Collections (`src/marketplace/expansionPages.ts`)
+- Connections (`src/marketplace/integrationPages.ts`)
+
+Sentences asserted by tests were left in place. Navigation gained `aria-current` only. The operator service worker cache name changed so the new stylesheet replaces the old shell.

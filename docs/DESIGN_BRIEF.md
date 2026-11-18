@@ -40,7 +40,7 @@ Quiet, specific, and local. The product is self-hosted. The page should look lik
 
 ## Visual direction
 
-Harbor daylight. Cool tide background, a flat instrument sheet, ink text, and one circular signal lamp. Status colors are dark enough to stand as marks. Words carry the meaning. No card grid, no pill as the identity, no all-caps eyebrows, no soft shadow.
+Field register, shared by the status page, the operator console, and Vision API. Grey-green cloth, an open page bound to a dark spine, slab headings, and one square stamp for status. Status colors are dark enough to stand as marks. Words carry the meaning. No card grid, no pill as the identity, no all-caps eyebrows, no soft shadow. The earlier Harbor daylight sheet is retired.
 
 ## Accessibility
 

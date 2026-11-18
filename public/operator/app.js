@@ -42,6 +42,7 @@ render();
 
 async function render() {
   const route = location.hash.replace(/^#/, "") || "/monitors";
+  markNav(route);
   statusLine.textContent = "";
   try {
     if (route === "/monitors") return paint(await monitorList());
@@ -56,6 +57,15 @@ async function render() {
   } catch (error) {
     statusLine.textContent = error instanceof Error ? error.message : "The request failed.";
   }
+}
+
+function markNav(route) {
+  document.querySelectorAll("nav[aria-label=Operator] a").forEach((link) => {
+    const path = (link.getAttribute("href") || "").replace(/^#/, "");
+    const on = route === path || route.startsWith(`${path}/`);
+    if (on) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
 }
 
 function paint(html) {

@@ -4,18 +4,25 @@ import { CATEGORIES, publicStatusLabel, type PublicListing } from "./catalog.js"
 import type { ListingRecord, ReportRecord } from "./store.js";
 
 const extraCss = `
-main { max-width: min(36rem, 100%); }
-nav, .filters { display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.card { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
-.card h2 { margin-top: 0; }
-.meta { color: var(--muted); margin-top: 8px; }
+.filters { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
+.card {
+  margin-top: var(--space-4);
+  padding: 0 0 var(--space-3) var(--space-3);
+  border-top: 0;
+  border-bottom: 1px solid var(--rule);
+  border-left: 6px solid var(--spine);
+}
+.card h2, .card h3 { margin-top: 0; }
+.card p { margin-top: var(--space-2); }
+.meta { color: var(--muted); }
 .status-published { color: var(--clear); }
 .status-temporarily_unavailable { color: var(--slow); }
 .status-retired, .status-under_review, .status-draft, .status-submitted, .status-changes_requested { color: var(--unknown); }
-textarea, select { font: inherit; color: var(--ink); background: var(--sheet); border: 1px solid var(--line); border-radius: 0; padding: 8px 16px; display: block; width: 100%; max-width: 24rem; margin-top: 8px; }
-pre { overflow: auto; padding: 16px; border: 1px solid var(--line); background: var(--paper); }
-code { font-family: "Cascadia Mono", Consolas, monospace; }
-button[data-copy] { margin-top: 8px; }
+pre { overflow: auto; margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--rule); background: var(--cloth); }
+code { font-family: "Cascadia Mono", "Cascadia Code", Consolas, monospace; font-size: 0.95rem; }
+button[data-copy] { margin-top: var(--space-2); }
+section { margin-top: var(--space-5); padding-top: var(--space-3); border-top: 1px solid var(--rule); }
+section h2 { margin-top: 0; }
 `;
 
 export function directoryPage(input: { listings: PublicListing[]; q: string; category: string; page: number; total: number; pageSize: number; portal?: boolean }): string {
@@ -29,7 +36,7 @@ export function directoryPage(input: { listings: PublicListing[]; q: string; cat
   const empty = input.listings.length === 0 ? `<p class="note">No listings match this search.</p>` : "";
   const pages = paging(input.page, input.total, input.pageSize, input.q, input.category);
   return document("Vision API directory", `<h1>Vision API</h1>
-    ${nav(input.portal === true)}
+    ${nav(input.portal === true, "/vision")}
     <p>A curated directory of external providers. A listing is a link, not a connection, a purchase, or a promise of uptime.</p>
     <form method="get" action="/vision">
       <label>Search<input name="q" value="${escapeHtml(input.q)}"></label>
@@ -52,8 +59,8 @@ export function listingPage(listing: PublicListing, reported = false, guides: Ar
     : "";
   const monitor = portal && extras?.template ? `<p><a href="/collections/monitor?listingId=${escapeHtml(listing.id)}">Create a monitor from the reviewed template</a></p>` : "";
   const save = portal ? `<p><a href="/collections?listingId=${escapeHtml(listing.id)}">Save in a collection</a></p>` : "";
-  return document(listing.name, `<h1>${escapeHtml(listing.name)}</h1>
-    ${nav(portal)}
+  return document(listing.name, `    <h1>${escapeHtml(listing.name)}</h1>
+    ${nav(portal, "/vision")}
     <p class="meta">External provider · ${escapeHtml(listing.providerName)} · ${escapeHtml(listing.providerDomain)}</p>
     <p class="status-${escapeHtml(listing.publicStatus)}">${escapeHtml(publicStatusLabel(listing.publicStatus))}</p>
     <p>${escapeHtml(listing.summary)}</p>
@@ -95,7 +102,7 @@ export function learnPage(guides: Array<{ slug: string; title: string; summary: 
     return `<h2>${labels[kind]}</h2>${list}`;
   }).join("");
   return document("Learning center", `<h1>Learning center</h1>
-    ${nav(portal)}
+    ${nav(portal, "/learn")}
     <p>Lessons are instructions. They do not install a provider, take a payment, or store a credential.</p>
     ${sections}`);
 }
@@ -140,7 +147,7 @@ export function guidePage(page: {
     ? `<p><a href="/learn/${escapeHtml(page.slug)}/example.txt">Download the read-only example</a></p><p class="note">The file reads your own monitor. It does not send YOUR_API_TOKEN to Vision API.</p>`
     : "";
   return document(page.title, `<h1>${escapeHtml(page.title)}</h1>
-    ${nav(portal)}
+    ${nav(portal, "/learn")}
     <p>${escapeHtml(page.summary)}</p>
     <p class="meta">Verified by ${escapeHtml(page.verifiedBy ?? "an editor")} on ${escapeHtml(page.verifiedAt ?? "")}. Difficulty: ${escapeHtml(page.difficulty)}. Language: ${escapeHtml(page.locale)}.</p>
     <p class="meta">Tested version: ${escapeHtml(page.testedVersion || "not recorded")}. Test environment: ${escapeHtml(page.testEnvironment || "not recorded")}.</p>
@@ -177,7 +184,7 @@ export function guidePage(page: {
 
 export function editorGate(portal = false): string {
   return document("Vision API editor", `<h1>Editor</h1>
-    ${nav(portal)}
+    ${nav(portal, "/vision/editor")}
     <p>Editorial review uses a staff token. A monitor API key cannot publish a listing.</p>
     <form method="post" action="/vision/editor">
       <label>Staff token<input name="token" type="password" autocomplete="off" required></label>
@@ -246,7 +253,7 @@ export function editorPage(token: string, listings: ListingRecord[], reports: Re
     <p>These processor identifiers stay on the staff page.</p>
     ${billing.accounts.length ? `<ul>${billing.accounts.map((account) => `<li>${escapeHtml(account.processorAccountRef)} · ${escapeHtml(account.onboardingState)} · ${account.chargesEnabled ? "charges enabled" : "charges disabled"}</li>`).join("")}</ul>` : `<p class="note">No connected accounts.</p>`}` : "";
   return document("Vision API editor", `<h1>Editor</h1>
-    ${nav(extras?.portal === true)}
+    ${nav(extras?.portal === true, "/vision/editor")}
     <p>Preview shows the summary and the internal review note. Publish, suspend, and retire update the public directory immediately.</p>
     <h2>Possible duplicates</h2>
     ${duplicates ? `<ul>${duplicates}</ul>` : `<p class="note">No duplicate domains in the queue.</p>`}
@@ -273,9 +280,14 @@ export function visionDocument(title: string, body: string): string {
   return document(title, body);
 }
 
-function nav(portal = false): string {
-  const account = portal ? `<a href="/account">Account</a><a href="/publisher">Publisher</a>` : "";
-  return `<nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a>${account}<a href="/vision/editor">Editor</a><a href="/operator/">Monitor</a></nav>`;
+function nav(portal = false, here = ""): string {
+  const account = portal ? `${navLink("/account", "Account", here)}${navLink("/publisher", "Publisher", here)}` : "";
+  return `<nav aria-label="Vision API">${navLink("/vision", "Directory", here)}${navLink("/learn", "Learn", here)}${account}${navLink("/vision/editor", "Editor", here)}${navLink("/operator/", "Monitor", here)}</nav>`;
+}
+
+function navLink(href: string, label: string, here: string): string {
+  const current = here === href ? ` aria-current="page"` : "";
+  return `<a href="${href}"${current}>${label}</a>`;
 }
 
 function section(title: string, body: string, markdown = false): string {

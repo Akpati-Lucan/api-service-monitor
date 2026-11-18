@@ -5,9 +5,10 @@ import { accessSentence, commerceSentences, formatMinor, renewalSentence } from 
 import type { ExternalNote, InvoiceView, LedgerView, MarketplaceOffer, PurchasableOffer, SubscriptionView } from "./billingStore.js";
 import type { ListingRecord } from "./store.js";
 
-function shell(title: string, body: string): string {
+function shell(title: string, body: string, here = "/billing"): string {
+  const current = (href: string) => here === href ? ` aria-current="page"` : "";
   return visionDocument(title, `<h1>${escapeHtml(title)}</h1>
-    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a><a href="/billing">Billing</a><a href="/operator/">Monitor</a></nav>
+    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher"${current("/publisher")}>Publisher</a><a href="/billing"${current("/billing")}>Billing</a><a href="/operator/">Monitor</a></nav>
     ${body}`);
 }
 
@@ -128,7 +129,7 @@ export function offersPage(input: { csrf: string; organizationId: string; listin
       <label>Currency<input name="currency" value="USD" required></label>
       <button type="submit">Save offer</button>
     </form>
-    ${offers ? `<ul>${offers}</ul>` : `<p class="note">No offers.</p>`}`);
+    ${offers ? `<ul>${offers}</ul>` : `<p class="note">No offers.</p>`}`, "/publisher");
 }
 
 export function processorPortalPage(): string {

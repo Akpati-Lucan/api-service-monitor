@@ -6,7 +6,7 @@ import type { ConnectionView } from "./integrationStore.js";
 function shell(body: string, billing: boolean): string {
   const billingLink = billing ? `<a href="/billing">Billing</a>` : "";
   return visionDocument("Connections", `<h1>Connections</h1>
-    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a>${billingLink}<a href="/connections">Connections</a><a href="/operator/">Monitor</a></nav>
+    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a>${billingLink}<a href="/connections" aria-current="page">Connections</a><a href="/operator/">Monitor</a></nav>
     ${body}`);
 }
 

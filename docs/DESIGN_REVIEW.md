@@ -44,3 +44,31 @@ Pages opened:
 | `#FFFFFF` on `#0C6B4D` | 6.51 |
 | `#FFFFFF` on `#8A5A00` | 5.93 |
 | `#FFFFFF` on `#8E1D1D` | 8.96 |
+
+## Field register, 17 November 2026
+
+Reviewed against the source after Harbor daylight was replaced. A browser screenshot was not available in this session. Contrast below is calculated for the new pairs. `npm test` and `npm run build` are the functional check.
+
+1. Purpose. The status page still opens on a stamp and a sentence. Directory, account, billing, collections, and connections keep their existing sentences and forms.
+2. Identity. Cloth `#D5DDD0`, leaf `#F6F7F2`, spine `#1E3A2F`, square stamp. Not the cool floating sheet and not a card grid.
+3. Hierarchy. One h1, then navigation on the app pages, then the task. Status order is unchanged.
+4. Layout. The page is left-bound to a 16px spine. Under 640px the spine becomes a 10px top band and the page meets the side edges.
+5. Type. Rockwell (slab) for titles and the status headline. Candara for reading and forms. Cascadia Mono only inside examples.
+6. Color. Status colors are the stamp and the row strip. Links are `#1A4E86`, separate from operational green. Buttons are leaf text on the spine.
+7. Components. Rows, ruled entries, and the stamp share one system. The class `card` is still a ruled entry, not a shadowed box.
+8. Clutter. No icon set, no load animation, no second palette.
+9. Template check. Not cream and terracotta, not acid green on black, not a rounded SaaS grid, not the rejected Harbor sheet.
+10. Mobile. One breakpoint. Navigation wraps. The stamp shrinks to 3rem.
+11. Access. Focus outline is 3px `#1A4E86`. The stamp keeps its accessible name. Calculated contrast, leaf `#F6F7F2` underneath unless noted:
+
+| Pair | Ratio |
+| --- | --- |
+| `#172117` on `#F6F7F2` | 15.40 |
+| `#3A463C` on `#F6F7F2` | 9.20 |
+| `#1A4E86` on `#F6F7F2` | 7.87 |
+| `#F6F7F2` on `#1E3A2F` | 11.46 |
+| `#FFFFFF` on `#0E6B45` | 6.55 |
+| `#FFFFFF` on `#8A5300` | 6.33 |
+| `#FFFFFF` on `#8E2D28` | 8.22 |
+
+12. Interaction. Routes, forms, and button names are unchanged. The current navigation item is an underline, not a new destination.

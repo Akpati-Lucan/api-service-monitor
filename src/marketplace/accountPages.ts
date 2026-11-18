@@ -4,11 +4,12 @@ import { DELETED_ACCOUNT_DAYS, RESET_HOURS, SESSION_DAYS, VERIFY_HOURS } from ".
 import type { DomainVerification, OrganizationRecord, PublicUser, PublisherNotification, PublisherProfile } from "./identity.js";
 import type { ListingRecord, ReviewRecord } from "./store.js";
 
-function shell(title: string, body: string, billing = false, connections = false): string {
-  const billingLink = billing ? `<a href="/billing">Billing</a>` : "";
-  const connectionsLink = connections ? `<a href="/connections">Connections</a>` : "";
+function shell(title: string, body: string, billing = false, connections = false, here = "/account"): string {
+  const current = (href: string) => here === href ? ` aria-current="page"` : "";
+  const billingLink = billing ? `<a href="/billing"${current("/billing")}>Billing</a>` : "";
+  const connectionsLink = connections ? `<a href="/connections"${current("/connections")}>Connections</a>` : "";
   return visionDocument(title, `<h1>${escapeHtml(title)}</h1>
-    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account">Account</a><a href="/publisher">Publisher</a>${billingLink}${connectionsLink}<a href="/operator/">Monitor</a></nav>
+    <nav aria-label="Vision API"><a href="/vision">Directory</a><a href="/learn">Learn</a><a href="/account"${current("/account")}>Account</a><a href="/publisher"${current("/publisher")}>Publisher</a>${billingLink}${connectionsLink}<a href="/operator/">Monitor</a></nav>
     ${body}`);
 }
 
@@ -145,7 +146,7 @@ export function publisherHome(input: {
       <button type="submit">Invite</button>
     </form>
     <h2>Notices</h2>
-    ${notices ? `<ul>${notices}</ul>` : `<p class="note">No notices.</p>`}`, input.billing === true);
+    ${notices ? `<ul>${notices}</ul>` : `<p class="note">No notices.</p>`}`, input.billing === true, false, "/publisher");
 }
 
 export function listingForm(csrf: string, organizationId: string, listing?: ListingRecord): string {
@@ -169,7 +170,7 @@ export function listingForm(csrf: string, organizationId: string, listing?: List
       <label>Privacy URL<input name="privacyUrl" value="${value(listing?.privacyUrl ?? "")}" required></label>
       <label>Sign-up URL<input name="signupUrl" value="${value(listing?.signupUrl ?? "")}"></label>
       <button type="submit">${listing ? "Save listing" : "Create draft"}</button>
-    </form>`);
+    </form>`, false, false, "/publisher");
 }
 
 export function listingDetail(input: { csrf: string; listing: ListingRecord; reviews: ReviewRecord[]; views: number; clicks: number; guideId: string | null; checkoutStarts: number; activeSubscriptions: number; canceledSubscriptions: number; refundMinor: number }): string {
@@ -211,11 +212,11 @@ export function listingDetail(input: { csrf: string; listing: ListingRecord; rev
       <input type="hidden" name="organizationId" value="${escapeHtml(input.listing.publisherId ?? "")}">
       <label>Note<textarea name="note"></textarea></label>
       <button type="submit">Send appeal</button>
-    </form>`);
+    </form>`, false, false, "/publisher");
 }
 
 export function previewPage(listing: ListingRecord): string {
   return shell(`Preview ${listing.name}`, `<p class="note">Preview. This listing is not public.</p>
     <p>${escapeHtml(listing.summary)}</p>
-    <p class="meta">${escapeHtml(listing.providerName)} · ${escapeHtml(listing.providerDomain)}</p>`);
+    <p class="meta">${escapeHtml(listing.providerName)} · ${escapeHtml(listing.providerDomain)}</p>`, false, false, "/publisher");
 }

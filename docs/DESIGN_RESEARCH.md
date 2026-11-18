@@ -141,3 +141,35 @@ Observation: every serious status page leads with one overall state, then compon
 Observation: status color is always paired with a word on the better pages. Interpretation: color-blind readers and grayscale embeds still need the word. Recommendation: the lamp has no text inside it; the sentence and the row label carry the word. The badge SVG keeps the status word in the image.
 
 Observation: hosted products decorate the marketing site and keep the status page quieter. Interpretation: anxiety is the context. Recommendation: spend the only bold move on the lamp. Leave the rest as a log.
+
+## Revisit, 17 November 2026
+
+The register now has to cover a directory and an operator console, not only a status page. Sources checked again:
+
+| Category | Findings |
+| --- | --- |
+| Website | Better Stack status pages, https://betterstack.com/docs/uptime/working-with-status-pages/customize-status-page-css-js/ and https://betterstack.com/docs/uptime/api/create-a-new-status-page/ |
+| Industry | Hosted uptime and status |
+| Strengths | One overall state, component layout, light or dark theme, a header that can be vertical or horizontal |
+| Visual identity | A product theme (v1 or v2) with brand colors and optional custom CSS |
+| Typography | Not specified as a distinctive face in the settings docs |
+| Colour | Theme plus brand colors |
+| Navigation | Up to four links on the v2 header |
+| User experience | Settings cover the banner, history length, and announcements without a custom layout |
+| Inspiration | Keep one state, then components, then incidents |
+| Limitations | Do not adopt the theme switcher, the full-width banner, or a branded header on the public status page |
+
+| Category | Findings |
+| --- | --- |
+| Website | Instatus look and feel, https://instatus.com/help/status-page/customize and https://instatus.com/blog/status-page-examples |
+| Industry | Hosted status pages |
+| Strengths | The docs push a minimal page: overall status, components, and a short incident story |
+| Visual identity | Three header designs, light or dark, logo and brand colors |
+| Typography | Not the point of the settings |
+| Colour | Brand and status colors |
+| Navigation | A designed header, not a long app menu |
+| User experience | Fast to publish. The blog tells teams to stay concise |
+| Inspiration | Keep the page short and put the status word in the open |
+| Limitations | Do not copy the three header templates or a logo lockup |
+
+Observation: both products still lead with a themed header or banner. Interpretation: that is the category default, which is why a cloth spine and a square stamp can be ours without hiding the sentence. Recommendation: keep the status order. Share the spine, the slab headings, and the ruled entries with Vision API and the operator console. Do not add a green banner.
